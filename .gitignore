@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Production build output
+dist/
+dist-ssr/
+
+# Rust/Tauri compilation outputs
+src-tauri/target/
+
+# Local configuration and system files
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# Temporary/Cache files
+.npm/
+.eslintcache
+.parcel-cache/
+.cache/
+
+# Playwright test directories
+.playwright-cli/
+.playwright-mcp/
+
+# Local tools and build caches
+tools/
+w64devkit-extract/
+whisper-cublas-11.8.0-bin-x64/

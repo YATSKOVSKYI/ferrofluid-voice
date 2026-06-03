@@ -1,0 +1,60 @@
+name: "Publish Release"
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers when you push a tag starting with v (e.g. v0.1.0)
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-latest"
+            args: ""
+          - platform: "windows-latest"
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install app dependencies
+        run: npm install
+
+      - name: Build whisper.cpp (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          cd third_party/whisper.cpp
+          cmake -B build -DWHISPER_METAL=ON
+          cmake --build build --config Release
+          mkdir -p ../../src-tauri/binaries/cpu
+          cp build/bin/whisper-cli ../../src-tauri/binaries/cpu/whisper-cli-cpu
+          # Clean up Windows binaries from macOS bundle to save size
+          rm -f ../../src-tauri/binaries/cpu/*.exe
+          rm -f ../../src-tauri/binaries/cuda/*
+
+      - name: Build Tauri App and Create Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Ferrofluid Voice v__VERSION__"
+          releaseBody: "Local dictation and transcription utility. Choose the appropriate installer for your platform."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
