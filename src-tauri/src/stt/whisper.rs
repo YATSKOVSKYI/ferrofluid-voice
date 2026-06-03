@@ -85,8 +85,8 @@ fn run_whisper(
         _ => "auto",
     };
 
-    let output = Command::new(&whisper_bin.path)
-        .arg("-m")
+    let mut cmd = Command::new(&whisper_bin.path);
+    cmd.arg("-m")
         .arg(model_path)
         .arg("-f")
         .arg(audio_path)
@@ -94,8 +94,16 @@ fn run_whisper(
         .arg(whisper_language)
         .arg("-otxt")
         .arg("-of")
-        .arg(&output_base)
-        .arg("-nt")
+        .arg(output_base)
+        .arg("-nt");
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd
         .output()
         .map_err(|error| AppError::Transcription(error.to_string()))?;
 
