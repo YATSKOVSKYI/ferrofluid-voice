@@ -35,6 +35,7 @@ export interface WhisperModelInfo {
 export interface AudioCaptureInfo {
   path: string;
   durationSeconds: number;
+  sampleCount: number;
 }
 
 export interface HistoryItem {

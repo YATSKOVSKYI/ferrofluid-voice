@@ -1,6 +1,6 @@
 [package]
 name = "voiceglass"
-version = "1.0.0"
+version = "1.0.1"
 description = "Local desktop dictation app powered by Whisper"
 authors = ["VoiceGlass"]
 edition = "2021"

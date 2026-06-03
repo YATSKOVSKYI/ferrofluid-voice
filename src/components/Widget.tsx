@@ -168,20 +168,18 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
 
             setResult(null);
             setMessage("");
-            statusRef.current = "recording";
-            setStatus("recording");
             if (!alreadyStarted) {
               try {
                 void logMessage(`[hotkey-start-recording] Calling startRecording()`);
                 await startRecording();
-                hotkeySessionActiveRef.current = true;
               } finally {
                 hotkeyStartInFlightRef.current = false;
               }
-            } else {
-              void logMessage(`[hotkey-start-recording] Recording already started on backend. Setting hotkeySessionActive=true`);
-              hotkeySessionActiveRef.current = true;
             }
+            statusRef.current = "recording";
+            setStatus("recording");
+            void logMessage(`[hotkey-start-recording] Recording ${alreadyStarted ? "already started on backend" : "started"}; setting hotkeySessionActive=true`);
+            hotkeySessionActiveRef.current = true;
             void logMessage(`[hotkey-start-recording] hotkeyStopPending=${hotkeyStopPendingRef.current}`);
             if (hotkeyStopPendingRef.current) {
               const alreadyStopped = hotkeyStopAlreadyStoppedRef.current;
@@ -493,9 +491,9 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
         }
       } else {
         setResult(null);
+        await startRecording();
         statusRef.current = "recording";
         setStatus("recording");
-        await startRecording();
       }
     } catch (error) {
       statusRef.current = "error";
