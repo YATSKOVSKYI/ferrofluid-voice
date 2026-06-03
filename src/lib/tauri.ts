@@ -149,8 +149,8 @@ export function getHotkeySettings() {
   if (!hasTauriRuntime()) {
     return Promise.resolve<{ alwaysOn: boolean; hotkeyType: string; hotkeyDisplay: string; autoSubmit: boolean }>({
       alwaysOn: true,
-      hotkeyType: "mouse_middle",
-      hotkeyDisplay: "Middle Click",
+      hotkeyType: "unassigned",
+      hotkeyDisplay: "Unassigned",
       autoSubmit: false,
     });
   }

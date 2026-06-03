@@ -86,6 +86,14 @@ export interface Translations {
   modelDescMedium: string;
   modelDescLargeV3Turbo: string;
   modelDescLargeV3: string;
+
+  msgCopied: string;
+  msgTranscriptReady: string;
+  msgRecordDidNotStart: string;
+  msgChooseModel: string;
+  msgEngineMissing: string;
+  msgRecordingFailed: string;
+  hotkeyUnassigned: string;
 }
 
 export const translations: Record<"en" | "ru" | "uk" | "zh" | "es", Translations> = {
@@ -159,6 +167,14 @@ export const translations: Record<"en" | "ru" | "uk" | "zh" | "es", Translations
     modelDescMedium: "Higher quality for longer dictation and mixed speech.",
     modelDescLargeV3Turbo: "Strong quality with better speed than the full large model.",
     modelDescLargeV3: "Best quality option, needs more disk and compute.",
+
+    msgCopied: "Copied.",
+    msgTranscriptReady: "Transcript ready.",
+    msgRecordDidNotStart: "Recording did not start.",
+    msgChooseModel: "Choose a local Whisper model in settings.",
+    msgEngineMissing: "Whisper engine is missing. Add whisper-cli.exe in binaries.",
+    msgRecordingFailed: "Recording failed.",
+    hotkeyUnassigned: "Unassigned",
   },
   ru: {
     settingsTitle: "Настройки",
@@ -230,6 +246,14 @@ export const translations: Record<"en" | "ru" | "uk" | "zh" | "es", Translations
     modelDescMedium: "Высокое качество для длинной диктовки и смешанной речи.",
     modelDescLargeV3Turbo: "Отличное качество и более высокая скорость по сравнению с полной версией large.",
     modelDescLargeV3: "Наилучшее качество распознавания, требует больше дискового пространства и ресурсов.",
+
+    msgCopied: "Скопировано.",
+    msgTranscriptReady: "Распознано.",
+    msgRecordDidNotStart: "Запись не началась.",
+    msgChooseModel: "Выберите локальную модель Whisper в настройках.",
+    msgEngineMissing: "Отсутствует движок Whisper. Добавьте binaries/whisper-cli.exe.",
+    msgRecordingFailed: "Ошибка записи.",
+    hotkeyUnassigned: "Не назначена",
   },
   uk: {
     settingsTitle: "Налаштування",
@@ -301,6 +325,14 @@ export const translations: Record<"en" | "ru" | "uk" | "zh" | "es", Translations
     modelDescMedium: "Висока якість для тривалого диктування та змішаного мовлення.",
     modelDescLargeV3Turbo: "Чудова якість та вища швидкість порівняно з повною версією large.",
     modelDescLargeV3: "Найкраща якість розпізнавання, потребує більше дискового простору та ресурсів.",
+
+    msgCopied: "Скопійовано.",
+    msgTranscriptReady: "Розпізнано.",
+    msgRecordDidNotStart: "Запис не розпочався.",
+    msgChooseModel: "Оберіть локальну модель Whisper у налаштуваннях.",
+    msgEngineMissing: "Движок Whisper відсутній. Додайте binaries/whisper-cli.exe.",
+    msgRecordingFailed: "Помилка запису.",
+    hotkeyUnassigned: "Не призначена",
   },
   zh: {
     settingsTitle: "设置",
@@ -372,6 +404,14 @@ export const translations: Record<"en" | "ru" | "uk" | "zh" | "es", Translations
     modelDescMedium: "针对较长听写和混合语音的高质量选项。",
     modelDescLargeV3Turbo: "高识别质量，比完整大模型速度更快。",
     modelDescLargeV3: "识别质量最佳的选项，需要更多的磁盘空间和计算资源。",
+
+    msgCopied: "已复制。",
+    msgTranscriptReady: "文本已就绪。",
+    msgRecordDidNotStart: "录音未开始。",
+    msgChooseModel: "请在设置中选择本地 Whisper 模型。",
+    msgEngineMissing: "缺少 Whisper 引擎。请在 binaries/ 目录中添加 whisper-cli.exe。",
+    msgRecordingFailed: "录音失败。",
+    hotkeyUnassigned: "未分配",
   },
   es: {
     settingsTitle: "Ajustes",
@@ -443,6 +483,14 @@ export const translations: Record<"en" | "ru" | "uk" | "zh" | "es", Translations
     modelDescMedium: "Mayor calidad para dictados largos y discursos mixtos.",
     modelDescLargeV3Turbo: "Gran calidad con mejor velocidad que el modelo grande completo.",
     modelDescLargeV3: "La mejor calidad, requiere más espacio de disco y capacidad de cómputo.",
+
+    msgCopied: "Copiado.",
+    msgTranscriptReady: "Transcripción lista.",
+    msgRecordDidNotStart: "La grabación no comenzó.",
+    msgChooseModel: "Elija un modelo Whisper local en ajustes.",
+    msgEngineMissing: "Falta el motor Whisper. Añada whisper-cli.exe en binaries.",
+    msgRecordingFailed: "Grabación fallida.",
+    hotkeyUnassigned: "No asignado",
   },
 };
 

@@ -694,7 +694,7 @@ export function SettingsPanel({
                               color: "var(--text-primary)",
                             }}
                           >
-                            {hotkeyDisplay}
+                            {hotkeyDisplay === "Unassigned" ? t.hotkeyUnassigned : hotkeyDisplay}
                           </div>
                           <button
                             className="secondary-button"

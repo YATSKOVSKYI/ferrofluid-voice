@@ -418,7 +418,7 @@ pub struct HotkeySettings {
 
 fn safe_hotkey_type(hotkey_type: String) -> String {
     match hotkey_type.as_str() {
-        "mouse_left" | "mouse_right" | "" => "mouse_middle".to_string(),
+        "mouse_left" | "mouse_right" | "" => "unassigned".to_string(),
         _ => hotkey_type,
     }
 }

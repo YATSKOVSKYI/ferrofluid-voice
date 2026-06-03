@@ -301,6 +301,9 @@ mod win {
     }
 
     pub fn parse_hotkey_display(hotkey_str: &str) -> String {
+        if hotkey_str == "unassigned" {
+            return "Unassigned".into();
+        }
         if hotkey_str == "mouse_middle" || hotkey_str == "" {
             return "Middle Click".into();
         }
@@ -332,6 +335,9 @@ mod win {
     }
 
     fn is_keyboard_hotkey_match(vk_code: u32, hotkey_str: &str) -> bool {
+        if hotkey_str == "unassigned" {
+            return false;
+        }
         if let Some(vk_str) = hotkey_str.strip_prefix("key_") {
             if let Ok(target_vk) = vk_str.parse::<u32>() {
                 // Shift generic (16), Left Shift (160), Right Shift (161)
@@ -362,6 +368,9 @@ mod win {
     }
 
     fn is_mouse_hotkey_match(wparam: usize, hook_struct: &MSLLHOOKSTRUCT, hotkey_str: &str) -> bool {
+        if hotkey_str == "unassigned" {
+            return false;
+        }
         if hotkey_str == "mouse_middle" || hotkey_str == "" {
             return wparam == WM_MBUTTONDOWN || wparam == WM_MBUTTONUP;
         }
@@ -747,6 +756,9 @@ mod mac {
     }
 
     pub fn parse_hotkey_display(hotkey_str: &str) -> String {
+        if hotkey_str == "unassigned" {
+            return "Unassigned".into();
+        }
         if hotkey_str == "mouse_middle" || hotkey_str == "" {
             return "Middle Click".into();
         }
@@ -771,6 +783,9 @@ mod mac {
     }
 
     fn is_keyboard_hotkey_match(js_code: u32, hotkey_str: &str) -> bool {
+        if hotkey_str == "unassigned" {
+            return false;
+        }
         if let Some(vk_str) = hotkey_str.strip_prefix("key_") {
             if let Ok(target_js) = vk_str.parse::<u32>() {
                 return js_code == target_js;
@@ -780,6 +795,9 @@ mod mac {
     }
 
     fn is_mouse_hotkey_match(button: u32, hotkey_str: &str) -> bool {
+        if hotkey_str == "unassigned" {
+            return false;
+        }
         if hotkey_str == "mouse_middle" || hotkey_str == "" {
             return button == 2;
         }

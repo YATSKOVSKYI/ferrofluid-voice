@@ -25,7 +25,7 @@ fn default_always_on() -> bool {
 }
 
 fn default_hotkey_type() -> String {
-    "mouse_middle".into()
+    "unassigned".into()
 }
 
 fn default_auto_submit() -> bool {
@@ -55,7 +55,7 @@ impl Default for AppSettings {
             quality_profile: "balanced".into(),
             compute_backend: "auto".into(),
             always_on: true,
-            hotkey_type: "mouse_middle".into(),
+            hotkey_type: "unassigned".into(),
             auto_submit: false,
         }
     }
@@ -187,7 +187,7 @@ pub fn load_settings() -> Result<AppSettings, AppError> {
         Ok(mut settings) => {
             // Safety Healing Guard: Protect the user from lockouts if mouse_left or mouse_right was somehow saved
             if settings.hotkey_type == "mouse_left" || settings.hotkey_type == "mouse_right" {
-                settings.hotkey_type = "mouse_middle".to_string();
+                settings.hotkey_type = "unassigned".to_string();
                 let _ = save_settings(&settings);
             }
             Ok(settings)

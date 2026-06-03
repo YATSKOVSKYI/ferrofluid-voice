@@ -7,7 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SoundWave } from "./SoundWave";
 import { FerrofluidOrb } from "./FerrofluidOrb";
 import { StatusPill } from "./StatusPill";
-import { useLocales } from "../lib/locales";
+import { useLocales, translations, getAppLanguage } from "../lib/locales";
 import type { Language } from "../lib/types";
 import {
   closeCurrentWindow,
@@ -150,7 +150,8 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
                 await stopRecording().catch(() => undefined);
               }
               setStatus("error");
-              setMessage(languageRef.current === "ru" ? "Выберите локальную модель Whisper в настройках." : "Choose a local Whisper model in settings.");
+              const currentT = translations[getAppLanguage(languageRef.current)];
+              setMessage(currentT.msgChooseModel);
               return;
             }
 
@@ -160,7 +161,8 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
                 await stopRecording().catch(() => undefined);
               }
               setStatus("error");
-              setMessage(languageRef.current === "ru" ? "Отсутствует движок Whisper. Добавьте binaries/whisper-cli.exe." : "Whisper engine is missing. Add binaries/whisper-cli.exe.");
+              const currentT = translations[getAppLanguage(languageRef.current)];
+              setMessage(currentT.msgEngineMissing);
               return;
             }
 
@@ -245,7 +247,8 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
             return;
           }
           setStatus("error");
-          setMessage(event.payload?.message || "Recording failed.");
+          const currentT = translations[getAppLanguage(languageRef.current)];
+          setMessage(event.payload?.message || currentT.msgRecordingFailed);
         });
 
         if (!active) {
@@ -411,7 +414,8 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
           if (message.includes("Recording is not running")) {
             statusRef.current = "ready";
             setStatus("ready");
-            setMessage("Recording did not start.");
+            const currentT = translations[getAppLanguage(languageRef.current)];
+            setMessage(currentT.msgRecordDidNotStart);
             return;
           }
           throw error;
@@ -426,13 +430,16 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
       if (transcript.text.trim()) {
         try {
           await writeClipboard(transcript.text);
-          setMessage("Copied.");
+          const currentT = translations[getAppLanguage(languageRef.current)];
+          setMessage(currentT.msgCopied);
         } catch (e) {
-          setMessage(`Transcript ready. ${errorMessage(e)}`);
+          const currentT = translations[getAppLanguage(languageRef.current)];
+          setMessage(`${currentT.msgTranscriptReady} ${errorMessage(e)}`);
         }
         await injectText(transcript.text, autoSubmitRef.current);
       } else {
-        setMessage("Transcript ready.");
+        const currentT = translations[getAppLanguage(languageRef.current)];
+        setMessage(currentT.msgTranscriptReady);
       }
 
       if (!alwaysOnRef.current) {
@@ -453,12 +460,12 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
   async function toggleRecording() {
     setMessage("");
     if (!hasModel) {
-      setMessage("Choose a local Whisper model in settings.");
+      setMessage(t.msgChooseModel);
       onOpenSettings();
       return;
     }
     if (!hasEngine) {
-      setMessage("Whisper engine is missing. Add whisper-cli.exe in binaries.");
+      setMessage(t.msgEngineMissing);
       return;
     }
 
@@ -477,12 +484,12 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
         if (transcript.text.trim()) {
           try {
             await writeClipboard(transcript.text);
-            setMessage("Copied.");
+            setMessage(t.msgCopied);
           } catch (error) {
-            setMessage(`Transcript ready. ${errorMessage(error)}`);
+            setMessage(`${t.msgTranscriptReady} ${errorMessage(error)}`);
           }
         } else {
-          setMessage("Transcript ready.");
+          setMessage(t.msgTranscriptReady);
         }
       } else {
         setResult(null);
@@ -501,7 +508,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
     if (!result?.text.trim()) return;
     try {
       await writeClipboard(result.text);
-      setMessage("Copied.");
+      setMessage(t.msgCopied);
     } catch (error) {
       setMessage(errorMessage(error));
     }
