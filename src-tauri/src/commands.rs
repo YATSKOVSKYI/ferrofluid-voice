@@ -207,7 +207,6 @@ pub async fn open_settings_window(app: AppHandle) -> Result<(), AppError> {
     .min_inner_size(860.0, 620.0)
     .resizable(true)
     .decorations(true)
-    .transparent(false)
     .always_on_top(false)
     .center()
     .build()
