@@ -57,6 +57,6 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Ferrofluid Voice v__VERSION__"
           releaseBody: "Local dictation and transcription utility. Choose the appropriate installer for your platform."
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
