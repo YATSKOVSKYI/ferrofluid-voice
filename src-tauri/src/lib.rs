@@ -6,13 +6,31 @@ mod stt;
 mod system;
 
 use commands::AppState;
-use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager};
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(main_window) = app.get_webview_window("main") {
+        let _ = main_window.show();
+        let _ = main_window.unminimize();
+        let _ = main_window.set_focus();
+        return;
+    }
+
+    if let Some(settings_window) = app.get_webview_window("settings") {
+        let _ = settings_window.show();
+        let _ = settings_window.unminimize();
+        let _ = settings_window.set_focus();
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -26,7 +44,8 @@ pub fn run() {
             app.manage(state);
 
             // 1. Create native system tray menu items
-            let settings_i = MenuItem::with_id(app, "settings", "Настройки (Settings)", true, None::<&str>)?;
+            let settings_i =
+                MenuItem::with_id(app, "settings", "Настройки (Settings)", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Выйти (Exit)", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_i, &quit_i])?;
 
@@ -35,31 +54,32 @@ pub fn run() {
                 let _tray = TrayIconBuilder::new()
                     .icon(icon.clone())
                     .menu(&menu)
-                    .on_menu_event(|app, event| {
-                        match event.id.as_ref() {
-                            "settings" => {
-                                let app_clone = app.clone();
-                                tauri::async_runtime::spawn(async move {
-                                    let _ = crate::commands::open_settings_window(app_clone).await;
-                                });
-                            }
-                            "quit" => {
-                                crate::commands::stop_hook_thread();
-                                app.exit(0);
-                            }
-                            _ => {}
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "settings" => {
+                            let app_clone = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let _ = crate::commands::open_settings_window(app_clone).await;
+                            });
                         }
+                        "quit" => {
+                            crate::commands::stop_hook_thread();
+                            app.exit(0);
+                        }
+                        _ => {}
                     })
                     .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
-                            if let Some(main_window) = tray.app_handle().get_webview_window("main") {
+                        if let TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            ..
+                        } = event
+                        {
+                            if let Some(main_window) = tray.app_handle().get_webview_window("main")
+                            {
                                 if let Ok(is_visible) = main_window.is_visible() {
                                     if is_visible {
                                         let _ = main_window.hide();
                                     } else {
-                                        let _ = main_window.show();
-                                        let _ = main_window.unminimize();
-                                        let _ = main_window.set_focus();
+                                        show_main_window(tray.app_handle());
                                     }
                                 }
                             }

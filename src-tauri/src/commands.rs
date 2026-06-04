@@ -182,6 +182,12 @@ pub fn start_window_drag(window: WebviewWindow) -> Result<(), AppError> {
 
 #[tauri::command]
 pub fn close_current_window(window: WebviewWindow) -> Result<(), AppError> {
+    if window.label() == "main" {
+        stop_hook_thread();
+        window.app_handle().exit(0);
+        return Ok(());
+    }
+
     window
         .close()
         .map_err(|error| AppError::File(error.to_string()))
