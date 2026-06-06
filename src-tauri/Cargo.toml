@@ -1,6 +1,6 @@
 [package]
 name = "voiceglass"
-version = "1.0.2"
+version = "1.1.0"
 description = "Local desktop dictation app powered by Whisper"
 authors = ["VoiceGlass"]
 edition = "2021"
@@ -24,11 +24,12 @@ rfd = "0.15"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-dialog = "2"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "time"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"

@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Unrelated nested project accidentally placed in the tree (separate git repo, ~1GB)
+fero-fluid-keyboard/
+
 # Production build output
 dist/
 dist-ssr/

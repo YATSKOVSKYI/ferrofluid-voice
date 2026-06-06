@@ -31,7 +31,20 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-2. SDL2 (Simple DirectMedia Layer)
+2. Piper TTS and bundled runtime dependencies
+================================================================================
+The local text-to-speech engine is powered by Piper.
+Files: piper.exe, piper_phonemize.dll, onnxruntime.dll, onnxruntime_providers_shared.dll, espeak-ng.dll, espeak-ng-data/*
+Piper License: MIT License
+ONNX Runtime License: MIT License
+eSpeak NG License: GNU General Public License v3.0 or later
+
+Piper copyright (c) 2023 Michael Hansen
+ONNX Runtime copyright (c) Microsoft Corporation
+eSpeak NG copyright (c) eSpeak NG contributors
+
+================================================================================
+3. SDL2 (Simple DirectMedia Layer)
 ================================================================================
 Files: SDL2.dll
 License: zlib License
@@ -55,7 +68,7 @@ freely, subject to the following three conditions:
 3. This notice may not be removed or altered from any source distribution.
 
 ================================================================================
-3. NVIDIA CUDA and cuBLAS Runtime Libraries
+4. NVIDIA CUDA and cuBLAS Runtime Libraries
 ================================================================================
 Files: cublas64_11.dll, cublasLt64_11.dll, cudart32_110.dll, cudart64_110.dll, cuinj64_118.dll, nvrtc-builtins64_118.dll, nvrtc64_112_0.dll
 License: NVIDIA CUDA Toolkit End User License Agreement (EULA)
@@ -66,7 +79,7 @@ Redistribution and use of the runtime dynamic link libraries (DLLs) are permitte
 Section 2.2 ("Redistributable Software") of the NVIDIA CUDA Toolkit EULA.
 
 ================================================================================
-4. Microsoft Visual C++ Runtime Libraries
+5. Microsoft Visual C++ Runtime Libraries
 ================================================================================
 Files: vcruntime140.dll, msvcp140.dll, vcruntime140_1.dll
 License: Microsoft Software License Terms

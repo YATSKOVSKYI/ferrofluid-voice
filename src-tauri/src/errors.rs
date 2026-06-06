@@ -17,6 +17,8 @@ pub enum AppError {
     WhisperBinaryNotFound,
     #[error("Transcription failed: {0}")]
     Transcription(String),
+    #[error("Text to speech failed: {0}")]
+    TextToSpeech(String),
     #[error("Settings error: {0}")]
     Settings(String),
     #[error("Storage error: {0}")]

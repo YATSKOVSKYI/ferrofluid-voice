@@ -32,6 +32,10 @@ fn default_auto_submit() -> bool {
     false
 }
 
+fn default_tts_voice_id() -> Option<String> {
+    None
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -45,6 +49,8 @@ pub struct AppSettings {
     pub hotkey_type: String,
     #[serde(default = "default_auto_submit")]
     pub auto_submit: bool,
+    #[serde(default = "default_tts_voice_id")]
+    pub tts_voice_id: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -57,6 +63,7 @@ impl Default for AppSettings {
             always_on: true,
             hotkey_type: "unassigned".into(),
             auto_submit: false,
+            tts_voice_id: None,
         }
     }
 }
@@ -164,6 +171,10 @@ pub fn recordings_dir() -> Result<PathBuf, AppError> {
     Ok(app_data_root()?.join("recordings"))
 }
 
+pub fn tts_dir() -> Result<PathBuf, AppError> {
+    Ok(app_data_root()?.join("tts"))
+}
+
 pub fn database_path() -> Result<PathBuf, AppError> {
     Ok(app_data_root()?.join("ferrofluid_voice.sqlite"))
 }
@@ -171,6 +182,7 @@ pub fn database_path() -> Result<PathBuf, AppError> {
 pub fn ensure_app_dirs() -> Result<(), AppError> {
     fs::create_dir_all(models_dir()?)?;
     fs::create_dir_all(recordings_dir()?)?;
+    fs::create_dir_all(tts_dir()?)?;
     fs::create_dir_all(app_config_root()?)?;
     Ok(())
 }

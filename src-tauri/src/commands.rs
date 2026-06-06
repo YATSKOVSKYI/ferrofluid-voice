@@ -8,6 +8,15 @@ use crate::{
             load_settings, model_status, models_dir, recordings_dir, save_settings,
             set_model_path as persist_model_path, AppSettings, ModelStatus, WhisperModelInfo,
         },
+        tts::{
+            available_tts_voices, delete_tts_voice as delete_tts_voice_file,
+            delete_custom_tts_model_file, download_custom_tts_model_file,
+            download_piper_engine as download_piper_engine_file, download_tts_voice_files,
+            list_custom_tts_models as list_custom_tts_models_file,
+            open_tts_folder, set_active_custom_tts_model_file, set_custom_tts_model_voice_file,
+            add_custom_tts_model_voice_file, set_tts_voice as persist_tts_voice, synthesize_speech as synthesize_speech_file,
+            tts_status, CustomTtsModelInfo, TtsStatus, TtsSynthesisResult, TtsVoiceInfo,
+        },
         whisper::{transcribe, TranscriptResult},
     },
     system::{clipboard, paths, hotkey, keyboard},
@@ -222,6 +231,34 @@ pub async fn open_settings_window(app: AppHandle) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+pub async fn open_library_window(app: AppHandle) -> Result<(), AppError> {
+    if let Some(window) = app.get_webview_window("library") {
+        let _ = window.unminimize();
+        window
+            .set_focus()
+            .map_err(|error| AppError::File(error.to_string()))?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(
+        &app,
+        "library",
+        WebviewUrl::App("index.html?view=library".into()),
+    )
+    .title("Ferrofluid Voice Library")
+    .inner_size(1100.0, 780.0)
+    .min_inner_size(880.0, 640.0)
+    .resizable(true)
+    .decorations(true)
+    .always_on_top(false)
+    .center()
+    .build()
+    .map_err(|error| AppError::File(error.to_string()))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn list_whisper_models(
     state: tauri::State<AppState>,
 ) -> Result<Vec<WhisperModelInfo>, AppError> {
@@ -308,6 +345,234 @@ pub fn get_download_progress(
 #[tauri::command]
 pub fn cancel_download(state: tauri::State<'_, AppState>) {
     state.download_cancel.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn get_tts_status(state: tauri::State<AppState>) -> Result<TtsStatus, AppError> {
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+    Ok(tts_status(&settings))
+}
+
+#[tauri::command]
+pub fn list_tts_voices(state: tauri::State<AppState>) -> Result<Vec<TtsVoiceInfo>, AppError> {
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+    available_tts_voices(&settings)
+}
+
+#[tauri::command]
+pub fn list_custom_tts_models(
+    state: tauri::State<AppState>,
+) -> Result<Vec<CustomTtsModelInfo>, AppError> {
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+    list_custom_tts_models_file(&settings)
+}
+
+#[tauri::command]
+pub async fn download_custom_tts_model(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    url: String,
+    name: Option<String>,
+    license: Option<String>,
+    engine: Option<String>,
+) -> Result<CustomTtsModelInfo, AppError> {
+    state.download_cancel.store(false, Ordering::SeqCst);
+    {
+        let mut progress_guard = state
+            .download_progress
+            .lock()
+            .map_err(|_| AppError::Download("Progress lock poisoned".into()))?;
+        progress_guard.insert("custom-tts".into(), (0, 0));
+    }
+
+    let app_clone = app.clone();
+    let cancel_flag = state.download_cancel.clone();
+    let progress_map = state.download_progress.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        download_custom_tts_model_file(
+            &app_clone,
+            &url,
+            name,
+            license,
+            engine,
+            cancel_flag,
+            progress_map,
+        )
+    })
+    .await
+    .map_err(|error| AppError::Download(error.to_string()))?
+}
+
+#[tauri::command]
+pub fn delete_custom_tts_model(
+    state: tauri::State<AppState>,
+    model_id: String,
+) -> Result<(), AppError> {
+    delete_custom_tts_model_file(&model_id)?;
+    // If the deleted model was the active voice, clear the selection so the app
+    // does not point at a missing model.
+    let mut settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+    if settings.tts_voice_id.as_deref() == Some(model_id.as_str()) {
+        settings.tts_voice_id = None;
+        crate::stt::model_manager::save_settings(&settings)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_active_custom_tts_model(
+    state: tauri::State<AppState>,
+    model_id: String,
+) -> Result<TtsStatus, AppError> {
+    let mut settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+    set_active_custom_tts_model_file(&mut settings, &model_id)?;
+    Ok(tts_status(&settings))
+}
+
+#[tauri::command]
+pub fn set_custom_tts_model_voice(
+    model_id: String,
+    voice_id: String,
+) -> Result<CustomTtsModelInfo, AppError> {
+    set_custom_tts_model_voice_file(&model_id, &voice_id)
+}
+
+#[tauri::command]
+pub fn add_custom_tts_model_voice(
+    model_id: String,
+    voice_id: String,
+    name: Option<String>,
+) -> Result<CustomTtsModelInfo, AppError> {
+    add_custom_tts_model_voice_file(&model_id, &voice_id, name)
+}
+
+#[tauri::command]
+pub async fn download_tts_voice(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    voice_id: String,
+) -> Result<TtsStatus, AppError> {
+    state.download_cancel.store(false, Ordering::SeqCst);
+    {
+        let mut progress_guard = state
+            .download_progress
+            .lock()
+            .map_err(|_| AppError::Download("Progress lock poisoned".into()))?;
+        progress_guard.insert(voice_id.clone(), (0, 0));
+    }
+
+    let app_clone = app.clone();
+    let voice_id_clone = voice_id.clone();
+    let cancel_flag = state.download_cancel.clone();
+    let progress_map = state.download_progress.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        download_tts_voice_files(&app_clone, &voice_id_clone, cancel_flag, progress_map)
+    })
+    .await
+    .map_err(|error| AppError::Download(error.to_string()))??;
+
+    {
+        let mut settings = state
+            .settings
+            .lock()
+            .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+        if settings.tts_voice_id.is_none() {
+            persist_tts_voice(&mut settings, &voice_id)?;
+        }
+        Ok(tts_status(&settings))
+    }
+}
+
+#[tauri::command]
+pub async fn download_piper_engine(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<TtsStatus, AppError> {
+    state.download_cancel.store(false, Ordering::SeqCst);
+    {
+        let mut progress_guard = state
+            .download_progress
+            .lock()
+            .map_err(|_| AppError::Download("Progress lock poisoned".into()))?;
+        progress_guard.insert("piper-engine".into(), (0, 0));
+    }
+
+    let app_clone = app.clone();
+    let cancel_flag = state.download_cancel.clone();
+    let progress_map = state.download_progress.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        download_piper_engine_file(&app_clone, cancel_flag, progress_map)
+    })
+    .await
+    .map_err(|error| AppError::Download(error.to_string()))??;
+
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+    Ok(tts_status(&settings))
+}
+
+#[tauri::command]
+pub fn set_tts_voice(
+    state: tauri::State<AppState>,
+    voice_id: String,
+) -> Result<TtsStatus, AppError> {
+    let mut settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+    persist_tts_voice(&mut settings, &voice_id)?;
+    Ok(tts_status(&settings))
+}
+
+#[tauri::command]
+pub fn delete_tts_voice(
+    state: tauri::State<AppState>,
+    voice_id: String,
+) -> Result<TtsStatus, AppError> {
+    let mut settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?;
+    delete_tts_voice_file(&mut settings, &voice_id)?;
+    Ok(tts_status(&settings))
+}
+
+#[tauri::command]
+pub fn open_tts_models_folder() -> Result<(), AppError> {
+    open_tts_folder()
+}
+
+#[tauri::command]
+pub async fn synthesize_speech(
+    state: tauri::State<'_, AppState>,
+    text: String,
+) -> Result<TtsSynthesisResult, AppError> {
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| AppError::Settings("Settings lock was poisoned.".into()))?
+        .clone();
+
+    tauri::async_runtime::spawn_blocking(move || synthesize_speech_file(settings, text))
+        .await
+        .map_err(|error| AppError::TextToSpeech(error.to_string()))?
 }
 
 #[tauri::command]

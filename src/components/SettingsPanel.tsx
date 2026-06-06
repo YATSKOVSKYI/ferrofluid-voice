@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, HardDrive, Keyboard, Loader2, Trash2, X, FolderOpen, Settings } from "lucide-react";
+import { CheckCircle2, Download, HardDrive, Keyboard, Loader2, Trash2, X, FolderOpen, Settings, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -17,6 +17,7 @@ import {
 } from "../lib/tauri";
 import type { ModelStatus, WhisperModelInfo, Language } from "../lib/types";
 import { useLocales } from "../lib/locales";
+import { TtsModelsPanel } from "./TtsModelsPanel";
 
 interface SettingsPanelProps {
   modelStatus: ModelStatus;
@@ -48,7 +49,7 @@ export function SettingsPanel({
     "idle"
   );
   const [tempRecordedName, setTempRecordedName] = useState("");
-  const [activeTab, setActiveTab] = useState<"models" | "hotkeys" | "general">("models");
+  const [activeTab, setActiveTab] = useState<"models" | "tts" | "hotkeys" | "general">("models");
 
   const t = useLocales(language);
 
@@ -367,6 +368,13 @@ export function SettingsPanel({
             <span>{t.tabModels}</span>
           </button>
           <button
+            className={`sidebar-tab-btn ${activeTab === "tts" ? "active" : ""}`}
+            onClick={() => setActiveTab("tts")}
+          >
+            <Volume2 className="h-4 w-4" />
+            <span>TTS модели</span>
+          </button>
+          <button
             className={`sidebar-tab-btn ${activeTab === "hotkeys" ? "active" : ""}`}
             onClick={() => setActiveTab("hotkeys")}
           >
@@ -560,6 +568,8 @@ export function SettingsPanel({
               </section>
             </div>
           )}
+
+          {activeTab === "tts" && <TtsModelsPanel onError={setError} />}
 
           {activeTab === "hotkeys" && (
             <div className="flex flex-col gap-6">

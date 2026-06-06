@@ -1,9 +1,9 @@
-import { Clipboard, Mic, Settings, Square, X } from "lucide-react";
+import { LibraryBig, Mic, Settings, Square, X } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { motion, AnimatePresence, useAnimationControls } from "motion/react";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { SoundWave } from "./SoundWave";
 import { FerrofluidOrb } from "./FerrofluidOrb";
 import { StatusPill } from "./StatusPill";
@@ -13,14 +13,15 @@ import {
   closeCurrentWindow,
   errorMessage,
   startRecording,
-  startWindowDrag as startNativeWindowDrag,
   stopRecording,
   transcribeAudio,
   writeClipboard,
+  saveTranscript,
   getHotkeySettings,
   getRecordingState,
   injectText,
   logMessage,
+  openLibraryWindow,
 } from "../lib/tauri";
 import type { AppStatus, ModelStatus, TranscriptResult } from "../lib/types";
 
@@ -44,8 +45,6 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
 
   const hasModel = Boolean(modelStatus?.exists);
   const hasEngine = Boolean(modelStatus?.engineExists);
-  const canRecord = hasModel && hasEngine;
-  const hasText = Boolean(result?.text.trim());
 
   const [alwaysOn, setAlwaysOn] = useState(true);
   const [autoSubmit, setAutoSubmit] = useState(false);
@@ -67,6 +66,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
   const hotkeyStopPendingRef = useRef(false);
   const hotkeyStopAlreadyStoppedRef = useRef(false);
   const hotkeySessionActiveRef = useRef(false);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
 
   const hasModelRef = useRef(hasModel);
   hasModelRef.current = hasModel;
@@ -380,6 +380,13 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
   });
 
   useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     if (status !== "recording") {
       setRecordingSeconds(0);
       return;
@@ -422,6 +429,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
 
       const transcript = await transcribeAudio(languageRef.current);
       setResult(transcript);
+      await saveTranscriptSafe(transcript);
       statusRef.current = "done";
       setStatus("done");
 
@@ -477,6 +485,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
         await stopRecording();
         const transcript = await transcribeAudio(language);
         setResult(transcript);
+        await saveTranscriptSafe(transcript);
         statusRef.current = "done";
         setStatus("done");
         if (transcript.text.trim()) {
@@ -502,26 +511,120 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
     }
   }
 
-  async function copyResult() {
-    if (!result?.text.trim()) return;
+  async function openLibrary() {
     try {
-      await writeClipboard(result.text);
-      setMessage(t.msgCopied);
+      await openLibraryWindow();
     } catch (error) {
       setMessage(errorMessage(error));
     }
   }
 
-  async function handleWindowDrag(event: ReactMouseEvent<HTMLElement>) {
+  async function saveTranscriptSafe(transcript: TranscriptResult) {
+    if (!transcript.text.trim()) return;
+    try {
+      await saveTranscript(transcript);
+    } catch (error) {
+      console.warn("Could not save transcript to history:", error);
+    }
+  }
+
+  function handleWindowDrag(event: ReactPointerEvent<HTMLElement>) {
     if (event.button !== 0 || !window.__TAURI_INTERNALS__) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("button,input,select,textarea,a,[data-no-drag]")) return;
+    if (isInteractiveDragTarget(event.target)) return;
+
+    const pointerId = event.pointerId;
+    const startScreenX = event.screenX;
+    const startScreenY = event.screenY;
+    const dragSurface = event.currentTarget;
+    event.preventDefault();
 
     try {
-      await startNativeWindowDrag();
-    } catch (error) {
-      console.warn("Could not start dragging Ferrofluid Voice window.", error);
+      dragSurface.setPointerCapture(pointerId);
+    } catch {
+      // Pointer capture can fail if the platform already handed the drag to the OS.
     }
+
+    startManualWindowDrag(pointerId, startScreenX, startScreenY, dragSurface);
+    void getCurrentWindow().startDragging().catch((error) => {
+      console.warn("Could not start native window drag; manual dragging remains active.", error);
+    });
+  }
+
+  function startManualWindowDrag(
+    pointerId: number,
+    startScreenX: number,
+    startScreenY: number,
+    dragSurface: HTMLElement,
+  ) {
+    const win = getCurrentWindow();
+    let active = true;
+    let origin: { x: number; y: number } | null = null;
+    let latestPointer: PointerEvent | null = null;
+    let animationFrame = 0;
+
+    const cleanup = () => {
+      active = false;
+      window.removeEventListener("pointermove", onPointerMove, true);
+      window.removeEventListener("pointerup", onPointerEnd, true);
+      window.removeEventListener("pointercancel", onPointerEnd, true);
+      window.removeEventListener("blur", cleanup);
+      if (animationFrame) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      try {
+        if (dragSurface.hasPointerCapture(pointerId)) {
+          dragSurface.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Ignore capture release errors from platform-level drag completion.
+      }
+      if (dragCleanupRef.current === cleanup) {
+        dragCleanupRef.current = null;
+      }
+    };
+
+    const scheduleMove = (event: PointerEvent) => {
+      latestPointer = event;
+      if (!origin || animationFrame) return;
+
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = 0;
+        if (!active || !origin || !latestPointer) return;
+
+        const nextX = origin.x + latestPointer.screenX - startScreenX;
+        const nextY = origin.y + latestPointer.screenY - startScreenY;
+        void win.setPosition(new PhysicalPosition(Math.round(nextX), Math.round(nextY))).catch((error) => {
+          console.warn("Could not manually move Ferrofluid Voice window.", error);
+          cleanup();
+        });
+      });
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return;
+      event.preventDefault();
+      scheduleMove(event);
+    };
+
+    const onPointerEnd = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) cleanup();
+    };
+
+    dragCleanupRef.current?.();
+    dragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", onPointerMove, true);
+    window.addEventListener("pointerup", onPointerEnd, true);
+    window.addEventListener("pointercancel", onPointerEnd, true);
+    window.addEventListener("blur", cleanup);
+
+    void win.outerPosition().then((position) => {
+      if (!active) return;
+      origin = { x: position.x, y: position.y };
+      if (latestPointer) scheduleMove(latestPointer);
+    }).catch((error) => {
+      console.warn("Could not read Ferrofluid Voice window position for manual drag.", error);
+      cleanup();
+    });
   }
 
   async function handleClose() {
@@ -536,7 +639,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
     <motion.section
       className="widget-shell"
       data-tauri-drag-region
-      onMouseDown={handleWindowDrag}
+      onPointerDownCapture={handleWindowDrag}
       initial={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
       animate={shellControls}
     >
@@ -604,13 +707,12 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
 
         <div className="widget-actions" data-no-drag>
           <button
-            className={`widget-action-btn widget-copy ${hasText ? "widget-copy-ready" : ""}`}
-            onClick={copyResult}
-            disabled={!hasText}
-            aria-label={t.tooltipCopy}
-            title={t.tooltipCopy}
+            className="widget-action-btn widget-copy widget-copy-ready"
+            onClick={openLibrary}
+            aria-label="History and text to speech"
+            title="History and text to speech"
           >
-            <Clipboard className="h-4 w-4" />
+            <LibraryBig className="h-4 w-4" />
           </button>
           <button
             className="widget-action-btn"
@@ -710,6 +812,11 @@ function statusHint(status: AppStatus, hasModel: boolean, hasEngine: boolean, t:
   if (status === "done") return t.hintCopied;
   if (status === "error") return t.hintCheckSettings;
   return t.hintReady;
+}
+
+function isInteractiveDragTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest("button,input,select,textarea,a,[role='button'],[data-no-drag]"));
 }
 
 function formatTime(seconds: number) {

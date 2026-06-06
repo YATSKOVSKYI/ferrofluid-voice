@@ -1,5 +1,16 @@
-import { invoke } from "@tauri-apps/api/core";
-import type { HistoryItem, Language, ModelStatus, TranscriptResult, WhisperModelInfo } from "./types";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import type {
+  HistoryItem,
+  Language,
+  ModelStatus,
+  TranscriptResult,
+  TtsCustomModelInfo,
+  TtsStatus,
+  TtsSynthesisResult,
+  TtsVoiceInfo,
+  WhisperModelInfo,
+} from "./types";
 
 declare global {
   interface Window {
@@ -36,7 +47,7 @@ export function openModelsFolder() {
 
 export function startWindowDrag() {
   requireTauriRuntime();
-  return invoke<void>("start_window_drag");
+  return getCurrentWindow().startDragging();
 }
 
 export function closeCurrentWindow() {
@@ -53,6 +64,14 @@ export function openSettingsWindow() {
     return Promise.resolve();
   }
   return invoke<void>("open_settings_window");
+}
+
+export function openLibraryWindow() {
+  if (!hasTauriRuntime()) {
+    window.open(`${window.location.origin}${window.location.pathname}?view=library`, "voiceglass-library", "width=1100,height=780");
+    return Promise.resolve();
+  }
+  return invoke<void>("open_library_window");
 }
 
 export function listWhisperModels() {
@@ -138,6 +157,145 @@ export function getDownloadProgress(modelId: string) {
 export function cancelDownload() {
   requireTauriRuntime();
   return invoke<void>("cancel_download");
+}
+
+export function getTtsStatus() {
+  if (!hasTauriRuntime()) {
+    return Promise.resolve<TtsStatus>({
+      engineExists: true,
+      enginePath: "built-in Piper TTS",
+      selectedVoiceDownloaded: false,
+    });
+  }
+  return invoke<TtsStatus>("get_tts_status");
+}
+
+export function listTtsVoices() {
+  if (!hasTauriRuntime()) {
+    return Promise.resolve<TtsVoiceInfo[]>([
+      {
+        id: "ru_RU-dmitri-medium",
+        name: "Dmitri",
+        locale: "ru_RU",
+        quality: "Medium",
+        size: "~63 MB",
+        description: "Russian male Piper voice from rhasspy/piper-voices.",
+        license: "MIT",
+        repository: "rhasspy/piper-voices",
+        url: "https://huggingface.co/rhasspy/piper-voices/tree/main/ru/ru_RU/dmitri/medium",
+        isDownloaded: false,
+        isSelected: false,
+      },
+      {
+        id: "ru_RU-denis-medium",
+        name: "Denis",
+        locale: "ru_RU",
+        quality: "Medium",
+        size: "~63 MB",
+        description: "Alternative Russian male Piper voice from rhasspy/piper-voices.",
+        license: "MIT",
+        repository: "rhasspy/piper-voices",
+        url: "https://huggingface.co/rhasspy/piper-voices/tree/main/ru/ru_RU/denis/medium",
+        isDownloaded: false,
+        isSelected: false,
+      },
+      {
+        id: "ru_RU-irina-medium",
+        name: "Irina",
+        locale: "ru_RU",
+        quality: "Medium",
+        size: "~63 MB",
+        description: "Russian female Piper voice from rhasspy/piper-voices.",
+        license: "MIT",
+        repository: "rhasspy/piper-voices",
+        url: "https://huggingface.co/rhasspy/piper-voices/tree/main/ru/ru_RU/irina/medium",
+        isDownloaded: false,
+        isSelected: false,
+      },
+      {
+        id: "ru_RU-ruslan-medium",
+        name: "Ruslan",
+        locale: "ru_RU",
+        quality: "Medium",
+        size: "~63 MB",
+        description: "Russian male Piper voice from rhasspy/piper-voices.",
+        license: "MIT",
+        repository: "rhasspy/piper-voices",
+        url: "https://huggingface.co/rhasspy/piper-voices/tree/main/ru/ru_RU/ruslan/medium",
+        isDownloaded: false,
+        isSelected: false,
+      },
+    ]);
+  }
+  return invoke<TtsVoiceInfo[]>("list_tts_voices");
+}
+
+export function listCustomTtsModels() {
+  if (!hasTauriRuntime()) {
+    return Promise.resolve<TtsCustomModelInfo[]>([]);
+  }
+  return invoke<TtsCustomModelInfo[]>("list_custom_tts_models");
+}
+
+export function downloadCustomTtsModel(input: {
+  url: string;
+  name?: string;
+  license?: string;
+  engine?: string;
+}) {
+  requireTauriRuntime();
+  return invoke<TtsCustomModelInfo>("download_custom_tts_model", input);
+}
+
+export function deleteCustomTtsModel(modelId: string) {
+  requireTauriRuntime();
+  return invoke<void>("delete_custom_tts_model", { modelId });
+}
+
+export function setActiveCustomTtsModel(modelId: string) {
+  requireTauriRuntime();
+  return invoke<TtsStatus>("set_active_custom_tts_model", { modelId });
+}
+
+export function setCustomTtsModelVoice(modelId: string, voiceId: string) {
+  requireTauriRuntime();
+  return invoke<TtsCustomModelInfo>("set_custom_tts_model_voice", { modelId, voiceId });
+}
+
+
+export function downloadTtsVoice(voiceId: string) {
+  requireTauriRuntime();
+  return invoke<TtsStatus>("download_tts_voice", { voiceId });
+}
+
+export function downloadPiperEngine() {
+  requireTauriRuntime();
+  return invoke<TtsStatus>("download_piper_engine");
+}
+
+export function setTtsVoice(voiceId: string) {
+  requireTauriRuntime();
+  return invoke<TtsStatus>("set_tts_voice", { voiceId });
+}
+
+export function deleteTtsVoice(voiceId: string) {
+  requireTauriRuntime();
+  return invoke<TtsStatus>("delete_tts_voice", { voiceId });
+}
+
+export function openTtsModelsFolder() {
+  requireTauriRuntime();
+  return invoke<void>("open_tts_models_folder");
+}
+
+export function synthesizeSpeech(text: string) {
+  requireTauriRuntime();
+  return invoke<TtsSynthesisResult>("synthesize_speech", { text });
+}
+
+export function fileAssetUrl(path: string) {
+  if (!hasTauriRuntime()) return path;
+  return convertFileSrc(path);
 }
 
 export function deleteWhisperModel(modelId: string) {

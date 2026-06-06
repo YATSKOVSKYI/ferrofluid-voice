@@ -32,6 +32,58 @@ export interface WhisperModelInfo {
   isSelected: boolean;
 }
 
+export interface TtsStatus {
+  engineExists: boolean;
+  enginePath?: string;
+  selectedVoiceId?: string;
+  selectedVoiceName?: string;
+  selectedVoiceDownloaded: boolean;
+}
+
+export interface TtsVoiceInfo {
+  id: string;
+  name: string;
+  locale: string;
+  quality: string;
+  size: string;
+  description: string;
+  license: string;
+  repository: string;
+  url: string;
+  localModelPath?: string;
+  localConfigPath?: string;
+  isDownloaded: boolean;
+  isSelected: boolean;
+}
+
+export interface TtsCustomModelInfo {
+  id: string;
+  name: string;
+  engine: string;
+  license: string;
+  url: string;
+  localPath?: string;
+  companionConfigPath?: string;
+  isDownloaded: boolean;
+  synthesisSupported: boolean;
+  notes: string;
+  voices: TtsCustomVoiceInfo[];
+  selectedVoiceId?: string;
+  isSelected: boolean;
+}
+
+export interface TtsCustomVoiceInfo {
+  id: string;
+  name: string;
+  language: string;
+  gender?: string;
+}
+
+export interface TtsSynthesisResult {
+  audioPath: string;
+  voiceName: string;
+}
+
 export interface AudioCaptureInfo {
   path: string;
   durationSeconds: number;

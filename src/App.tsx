@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sun, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { SettingsPage } from "./pages/SettingsPage";
+import { LibraryPage } from "./pages/LibraryPage";
 import { Widget } from "./components/Widget";
 import { errorMessage, getModelStatus, openSettingsWindow } from "./lib/tauri";
 import type { ModelStatus, Language } from "./lib/types";
@@ -18,7 +18,9 @@ export default function App() {
   const [language, setLanguage] = useState<Language>(
     () => (localStorage.getItem("transcribe_language") as Language) || "auto"
   );
-  const isSettingsWindow = new URLSearchParams(window.location.search).get("view") === "settings";
+  const view = new URLSearchParams(window.location.search).get("view");
+  const isSettingsWindow = view === "settings";
+  const isLibraryWindow = view === "library";
 
   useEffect(() => {
     const syncSettings = () => {
@@ -110,28 +112,24 @@ export default function App() {
     }
   }
 
-  async function closeSettingsWindow() {
-    if (typeof window === "undefined" || !window.__TAURI_INTERNALS__) {
-      window.close();
-      return;
-    }
-    await getCurrentWindow().close();
-  }
-
-  if (isSettingsWindow) {
+  if (isSettingsWindow || isLibraryWindow) {
     return (
       <main className="settings-stage text-slate-950 transition-colors dark:text-slate-50">
         <div className="settings-window settings-window-standalone">
           <div className="settings-window-header">
             <div>
               <div className="flex items-center gap-3">
-                <div className="settings-window-title">Ferrofluid Voice {t.settingsTitle}</div>
-                <div className={`status-pill ${hasModel ? "status-ready" : "status-error"}`} style={{ minHeight: "1.65rem", height: "1.65rem", fontSize: "0.74rem", padding: "0 0.65rem" }}>
-                  {hasModel ? t.modelFound : t.modelMissing}
+                <div className="settings-window-title">
+                  {isLibraryWindow ? "Ferrofluid Voice Library" : `Ferrofluid Voice ${t.settingsTitle}`}
                 </div>
+                {!isLibraryWindow ? (
+                  <div className={`status-pill ${hasModel ? "status-ready" : "status-error"}`} style={{ minHeight: "1.65rem", height: "1.65rem", fontSize: "0.74rem", padding: "0 0.65rem" }}>
+                    {hasModel ? t.modelFound : t.modelMissing}
+                  </div>
+                ) : null}
               </div>
               <div className="settings-window-subtitle">
-                {hasModel ? t.settingsSubtitle : t.hintSelectModel}
+                {isLibraryWindow ? "История распознавания и озвучивание текста" : hasModel ? t.settingsSubtitle : t.hintSelectModel}
               </div>
             </div>
             <div className="flex gap-2">
@@ -168,7 +166,9 @@ export default function App() {
               </AnimatePresence>
             </div>
           </div>
-          {!modelStatus ? (
+          {isLibraryWindow ? (
+            <LibraryPage />
+          ) : !modelStatus ? (
             <div className="glass-panel grid min-h-[420px] place-items-center text-slate-600 dark:text-slate-300">{t.loading}</div>
           ) : (
             <SettingsPage modelStatus={modelStatus} onModelStatusChange={setModelStatus} language={language} onLanguageChange={setLanguage} />
