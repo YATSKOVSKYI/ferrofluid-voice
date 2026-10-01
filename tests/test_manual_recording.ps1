@@ -23,6 +23,7 @@ try {
     [void][ManualRecordingInput]::SetCursorPos([int]($bounds.X + $bounds.Width * 48 / 431),[int]($bounds.Y + $bounds.Height * 39 / 85))
     function Click-Microphone {
         [ManualRecordingInput]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 50
         [ManualRecordingInput]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
     }
     $started = Get-Date
@@ -38,9 +39,16 @@ try {
     [ManualRecordingInput]::keybd_event(162,0,2,[UIntPtr]::Zero)
     Start-Sleep -Seconds 1
     Click-Microphone
-    Start-Sleep -Milliseconds 150
-    $bytes = [IO.File]::ReadAllBytes($files[0].FullName)
-    if ($bytes.Length -le 44 -or [BitConverter]::ToUInt32($bytes,4) -ne $bytes.Length - 8) { throw 'Manual stop did not finalize WAV' }
+    $finalized = $false
+    $stopDeadline = (Get-Date).AddSeconds(5)
+    do {
+        try {
+            $bytes = [IO.File]::ReadAllBytes($files[0].FullName)
+            $finalized = $bytes.Length -gt 44 -and [BitConverter]::ToUInt32($bytes,4) -eq $bytes.Length - 8
+        } catch [IO.IOException] { } # Recorder may still be closing its stream.
+        if (!$finalized) { Start-Sleep -Milliseconds 50 }
+    } while (!$finalized -and (Get-Date) -lt $stopDeadline)
+    if (!$finalized) { throw 'Manual stop did not finalize WAV' }
     $seenEngine = $false
     $deadline = (Get-Date).AddSeconds(30)
     do {
