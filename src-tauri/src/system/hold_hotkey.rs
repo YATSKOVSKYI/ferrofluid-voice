@@ -86,6 +86,7 @@ pub fn valid(value: &str) -> bool {
 
 #[derive(Debug, PartialEq)]
 pub enum Action {
+    Observed(u32, bool),
     Start,
     Stop,
     Captured(String),

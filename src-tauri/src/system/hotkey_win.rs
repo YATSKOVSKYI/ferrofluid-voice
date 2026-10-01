@@ -9,6 +9,10 @@ use std::{
     },
 };
 use tauri::Emitter;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT,
+    MOD_SHIFT, MOD_WIN,
+};
 use windows_sys::Win32::{
     System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
     UI::WindowsAndMessaging::*,
@@ -21,6 +25,18 @@ fn state() -> &'static Mutex<HoldState> {
 static ACTIONS: OnceLock<mpsc::Sender<(Action, isize)>> = OnceLock::new();
 static STARTED: AtomicBool = AtomicBool::new(false);
 static THREAD_ID: AtomicU32 = AtomicU32::new(0);
+static KEYBOARD_REGISTERED: AtomicBool = AtomicBool::new(false);
+const RECONFIGURE: u32 = WM_APP + 41;
+const HOTKEY_ID: i32 = 0x4601;
+
+fn notify_configuration() {
+    let thread = THREAD_ID.load(Ordering::SeqCst);
+    if thread != 0 {
+        unsafe {
+            PostThreadMessageW(thread, RECONFIGURE, 0, 0);
+        }
+    }
+}
 
 fn dispatch(actions: Vec<Action>, foreground: isize) {
     if let Some(sender) = ACTIONS.get() {
@@ -29,14 +45,34 @@ fn dispatch(actions: Vec<Action>, foreground: isize) {
         }
     }
 }
+fn trace(message: &str) {
+    use std::io::Write;
+    if let Some(root) = dirs::data_dir() {
+        if let Ok(mut log) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(root.join("Ferrofluid Voice/hotkey.log"))
+        {
+            let _ = writeln!(log, "{} {message}", chrono::Utc::now().to_rfc3339());
+        }
+    }
+}
 pub fn configure(value: &str) {
-    let actions = state().lock().unwrap().configure(value);
+    trace(&format!("configured {value}"));
+    let mut current = state().lock().unwrap();
+    let changed = current.configured != hold_hotkey::parse(value);
+    let actions = current.configure(value);
+    drop(current);
     dispatch(actions, 0);
+    if changed {
+        notify_configuration();
+    }
 }
 pub fn capture(enabled: bool) {
     IS_RECORDING_HOTKEY.store(enabled, Ordering::SeqCst);
     let actions = state().lock().unwrap().capture(enabled);
     dispatch(actions, 0);
+    notify_configuration();
 }
 pub fn parse_hotkey_display(value: &str) -> String {
     if value == "unassigned" {
@@ -61,7 +97,14 @@ pub fn parse_hotkey_display(value: &str) -> String {
 fn handle_input(key: u32, down: bool) -> bool {
     // This lock protects only the small in-memory state machine, never settings,
     // audio, filesystem or UI calls. The hook must return before Windows' timeout.
-    let (consume, actions) = state().lock().unwrap().event(key, down);
+    let mut held_state = state().lock().unwrap();
+    let observed = held_state.configured.contains(&hold_hotkey::normalize(key));
+    let (consume, mut actions) = held_state.event(key, down);
+    drop(held_state);
+    #[cfg(not(test))]
+    if observed {
+        actions.insert(0, Action::Observed(key, down));
+    }
     let foreground = if actions.iter().any(|a| *a == Action::Start) {
         unsafe { GetForegroundWindow() as isize }
     } else {
@@ -71,6 +114,11 @@ fn handle_input(key: u32, down: bool) -> bool {
     consume
 }
 unsafe extern "system" fn keyboard_hook(code: i32, message: usize, data: isize) -> isize {
+    // Windows owns keyboard activation; do not swallow its native hotkey or
+    // depend on low-level key-up delivery after the widget changes focus.
+    if KEYBOARD_REGISTERED.load(Ordering::SeqCst) && !IS_RECORDING_HOTKEY.load(Ordering::SeqCst) {
+        return CallNextHookEx(ptr::null_mut(), code, message, data);
+    }
     if code >= 0
         && matches!(
             message as u32,
@@ -120,15 +168,23 @@ pub fn start_hook_thread() {
         let mut owns_recording = false;
         for (action, foreground) in receiver {
             match action {
+                Action::Observed(key, down) => trace(&format!("input VK={key} down={down}")),
                 Action::Start => {
+                    trace(&format!(
+                        "start requested recording={} transcribing={}",
+                        IS_RECORDING.load(Ordering::SeqCst),
+                        IS_TRANSCRIBING.load(Ordering::SeqCst)
+                    ));
                     if !IS_RECORDING.load(Ordering::SeqCst)
                         && !IS_TRANSCRIBING.load(Ordering::SeqCst)
                     {
                         trigger_start_recording(Some(foreground));
                         owns_recording = IS_RECORDING.load(Ordering::SeqCst);
+                        trace(&format!("start completed owns_recording={owns_recording}"));
                     }
                 }
                 Action::Stop => {
+                    trace(&format!("stop requested owns_recording={owns_recording}"));
                     if owns_recording {
                         trigger_stop_recording();
                         owns_recording = false;
@@ -166,6 +222,11 @@ fn install_hooks() {
         let module = GetModuleHandleW(ptr::null());
         let keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0);
         let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0);
+        trace(&format!(
+            "hooks installed keyboard={} mouse={}",
+            !keyboard.is_null(),
+            !mouse.is_null()
+        ));
         if keyboard.is_null() || mouse.is_null() {
             if let Some(app) = GLOBAL_APP_HANDLE.lock().unwrap().as_ref().cloned() {
                 let _ = app.emit(
@@ -174,10 +235,43 @@ fn install_hooks() {
                 );
             }
         }
+        let mut registered = register_keyboard();
+        let mut holding = false;
+        let mut armed = true;
+        let timer = SetTimer(ptr::null_mut(), 0, 25, None);
         while GetMessageW(&mut message, ptr::null_mut(), 0, 0) > 0 {
+            if message.message == RECONFIGURE {
+                if holding {
+                    dispatch(vec![Action::Stop], 0);
+                }
+                holding = false;
+                armed = true;
+                UnregisterHotKey(ptr::null_mut(), HOTKEY_ID);
+                KEYBOARD_REGISTERED.store(false, Ordering::SeqCst);
+                registered = register_keyboard();
+            } else if message.message == WM_HOTKEY && message.wParam == HOTKEY_ID as usize {
+                if armed && registered.is_some() {
+                    holding = true;
+                    armed = false;
+                    dispatch(vec![Action::Start], GetForegroundWindow() as isize);
+                }
+            } else if message.message == WM_TIMER {
+                if let Some(keys) = registered.as_ref() {
+                    if holding && keys.iter().any(|key| GetAsyncKeyState(*key as i32) >= 0) {
+                        holding = false;
+                        dispatch(vec![Action::Stop], 0);
+                    }
+                    if keys.iter().all(|key| GetAsyncKeyState(*key as i32) >= 0) {
+                        armed = true;
+                    }
+                }
+            }
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+        KillTimer(ptr::null_mut(), timer);
+        UnregisterHotKey(ptr::null_mut(), HOTKEY_ID);
+        KEYBOARD_REGISTERED.store(false, Ordering::SeqCst);
         if !keyboard.is_null() {
             UnhookWindowsHookEx(keyboard);
         }
@@ -186,6 +280,33 @@ fn install_hooks() {
         }
         THREAD_ID.store(0, Ordering::SeqCst);
     });
+}
+
+unsafe fn register_keyboard() -> Option<Vec<u32>> {
+    if IS_RECORDING_HOTKEY.load(Ordering::SeqCst) {
+        return None;
+    }
+    let keys = state().lock().unwrap().configured.clone();
+    let mut modifiers = MOD_NOREPEAT;
+    let mut primary = None;
+    for key in &keys {
+        match *key {
+            16 => modifiers |= MOD_SHIFT,
+            17 => modifiers |= MOD_CONTROL,
+            18 => modifiers |= MOD_ALT,
+            91 => modifiers |= MOD_WIN,
+            value if value < 256 && primary.is_none() => primary = Some(value),
+            _ => return None,
+        }
+    }
+    let primary = primary?;
+    if RegisterHotKey(ptr::null_mut(), HOTKEY_ID, modifiers, primary) == 0 {
+        trace("RegisterHotKey failed: binding may be owned by another application; using hook fallback");
+        return None;
+    }
+    KEYBOARD_REGISTERED.store(true, Ordering::SeqCst);
+    trace("keyboard activation registered with Windows; release polling active");
+    Some(keys.into_iter().collect())
 }
 pub fn stop_hook_thread() {
     let thread_id = THREAD_ID.load(Ordering::SeqCst);
@@ -251,8 +372,8 @@ mod tests {
             Action::Captured("chord_17+135".into())
         );
         capture(false);
-        input(135, true);
         input(163, true);
+        input(135, true);
         input(135, false);
         input(163, false);
         assert_eq!(
@@ -264,6 +385,7 @@ mod tests {
             Action::Stop
         );
         configure("mouse_middle");
+        std::thread::sleep(Duration::from_millis(100));
         unsafe {
             mouse_event(MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0);
         }

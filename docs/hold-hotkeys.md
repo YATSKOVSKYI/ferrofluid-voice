@@ -37,12 +37,32 @@ Regression command (close the application first; Windows SDK is required):
 Eight tests passed on 1 October 2026: release order, auto-repeat/rearming,
 capture after full release, modifier sides, setting changes, mouse combinations,
 extra modifiers, cancellation and native Windows input. The native test injects
-Ctrl+F24 in both press orders and a middle-button click into real low-level hooks;
+Ctrl+F24 with both release orders and a middle-button click through real Windows input;
 an intentionally unread worker queue still receives exactly one Start and Stop.
 The test executable gets its own Common Controls v6 manifest because it links
 native Tauri UI code. Production TypeScript and native release builds passed.
 
-The native test validates hook delivery and action ordering without constructing
-a microphone or running Whisper. End-to-end UI/transcription verification was
-not performed in this change because launching WebView2 with a debugging port
-was rejected by automatic approval review.
+## Native Windows shortcut registration and release recovery
+
+An installed-app microphone test reproduced missing key-up delivery after the
+widget took focus. Modifier + key shortcuts now use Windows `RegisterHotKey`
+with `MOD_NOREPEAT`, and a 25 ms timer reads `GetAsyncKeyState` outside callbacks
+to stop when either required key is released. Windows owns keyboard activation
+and suppression; low-level hooks are still used for capture and mouse/arbitrary
+multi-key fallback. Registration changes are serialized on the input thread.
+
+The saved binding was also different from Ctrl+Q; the user confirmed Ctrl+Q,
+which was persisted before restarting the installed build. The actual installed
+release was verified with its microphone and widget: a two-second Ctrl+Q hold
+created a finalized 376,364-byte WAV and automatically started
+`whisper-cli-cuda.exe`. Releasing Ctrl first while Q remained held finalized a
+second 188,204-byte WAV and again invoked the widget's transcription handler.
+These verify activation, microphone stop and automatic Whisper invocation,
+without claiming speech accuracy on the short test audio.
+
+`tests/test_ctrlq_recording.ps1` repeats both release orders against a real
+application, checks finalized RIFF lengths, and observes the child Whisper
+process. It requires Ctrl+Q configured, auto-submit disabled, a downloaded
+Whisper model, and the app closed. Run with `-Executable` to test the installed
+copy. No debugging port is needed. Test audio and private logs remain outside
+Git. Runtime shortcut diagnostics are written to `hotkey.log` in application data.
