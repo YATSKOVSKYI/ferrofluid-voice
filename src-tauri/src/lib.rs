@@ -5,29 +5,44 @@ mod storage;
 mod stt;
 mod system;
 mod meetings;
+mod instance;
 
 use commands::AppState;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
+fn activate_existing_window(app: &AppHandle) {
+    for label in ["library", "settings"] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = instance::restore_window(&window);
+            return;
+        }
+    }
+    show_main_window(app);
+}
+
 fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
-        let _ = main_window.show();
-        let _ = main_window.unminimize();
-        let _ = main_window.set_focus();
+        let _ = instance::restore_window(&main_window);
         return;
     }
 
     if let Some(settings_window) = app.get_webview_window("settings") {
-        let _ = settings_window.show();
-        let _ = settings_window.unminimize();
-        let _ = settings_window.set_focus();
+        let _ = instance::restore_window(&settings_window);
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _instance_guard = match instance::enter() {
+        Ok(Some(guard)) => guard,
+        Ok(None) => return,
+        Err(error) => {
+            instance::report_failure(&error);
+            std::process::exit(2);
+        }
+    };
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if args.iter().any(|arg| arg == "--library") {
@@ -35,7 +50,9 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move { let _ = commands::open_library_window(app).await; });
                 return;
             }
-            show_main_window(app);
+            // Return from WM_COPYDATA immediately; all window work is queued.
+            let app_handle = app.clone();
+            let _ = app.run_on_main_thread(move || activate_existing_window(&app_handle));
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage(meetings::MeetingsState::default())
@@ -99,8 +116,9 @@ pub fn run() {
                     .build(app)?;
             }
 
-            // Hide the widget at startup if hold-hotkey mode is active
-            if !always_on {
+            // An explicit launch must always reveal a window. Hold-hotkey mode
+            // may hide the widget only when the Library is being opened instead.
+            if !always_on && std::env::args().any(|arg| arg == "--library") {
                 if let Some(main_window) = app.get_webview_window("main") {
                     let _ = main_window.hide();
                 }
@@ -109,9 +127,14 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                if window.label() == "main" {
-                    commands::stop_hook_thread();
+            if window.label() == "main" {
+                match event {
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        commands::stop_hook_thread();
+                        window.app_handle().exit(0);
+                    }
+                    tauri::WindowEvent::Destroyed => commands::stop_hook_thread(),
+                    _ => {}
                 }
             }
         })

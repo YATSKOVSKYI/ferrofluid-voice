@@ -204,58 +204,38 @@ pub fn close_current_window(window: WebviewWindow) -> Result<(), AppError> {
 
 #[tauri::command]
 pub async fn open_settings_window(app: AppHandle) -> Result<(), AppError> {
-    if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.unminimize();
-        window
-            .set_focus()
-            .map_err(|error| AppError::File(error.to_string()))?;
-        return Ok(());
-    }
-
-    WebviewWindowBuilder::new(
-        &app,
-        "settings",
-        WebviewUrl::App("index.html?view=settings".into()),
-    )
-    .title("Ferrofluid Voice Settings")
-    .inner_size(1040.0, 760.0)
-    .min_inner_size(860.0, 620.0)
-    .resizable(true)
-    .decorations(true)
-    .always_on_top(false)
-    .center()
-    .build()
-    .map_err(|error| AppError::File(error.to_string()))?;
-
-    Ok(())
+    open_auxiliary_window(app, "settings").await
 }
 
 #[tauri::command]
 pub async fn open_library_window(app: AppHandle) -> Result<(), AppError> {
-    if let Some(window) = app.get_webview_window("library") {
-        let _ = window.unminimize();
-        window
-            .set_focus()
-            .map_err(|error| AppError::File(error.to_string()))?;
-        return Ok(());
-    }
+    open_auxiliary_window(app, "library").await
+}
 
-    WebviewWindowBuilder::new(
-        &app,
-        "library",
-        WebviewUrl::App("index.html?view=library".into()),
-    )
-    .title("Ferrofluid Voice Library")
-    .inner_size(1100.0, 780.0)
-    .min_inner_size(880.0, 640.0)
-    .resizable(true)
-    .decorations(true)
-    .always_on_top(false)
-    .center()
-    .build()
-    .map_err(|error| AppError::File(error.to_string()))?;
-
-    Ok(())
+async fn open_auxiliary_window(app: AppHandle, label: &'static str) -> Result<(), AppError> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let handle = app.clone();
+    // Serialize lookup + creation on the UI thread. Concurrent activations must
+    // never race to build two WebViews with the same label (or block WM_COPYDATA).
+    app.run_on_main_thread(move || {
+        let result = (|| {
+            let window = if let Some(window) = handle.get_webview_window(label) {
+                window
+            } else {
+                let settings = label == "settings";
+                WebviewWindowBuilder::new(&handle, label,
+                    WebviewUrl::App(format!("index.html?view={label}").into()))
+                    .title(if settings { "Ferrofluid Voice Settings" } else { "Ferrofluid Voice Library" })
+                    .inner_size(if settings { 1040.0 } else { 1100.0 }, if settings { 760.0 } else { 780.0 })
+                    .min_inner_size(if settings { 860.0 } else { 880.0 }, if settings { 620.0 } else { 640.0 })
+                    .resizable(true).decorations(true).always_on_top(false).center()
+                    .build().map_err(|error| AppError::File(error.to_string()))?
+            };
+            crate::instance::restore_window(&window).map_err(|error| AppError::File(error.to_string()))
+        })();
+        let _ = sender.send(result);
+    }).map_err(|error| AppError::File(error.to_string()))?;
+    receiver.await.map_err(|_| AppError::File("Window activation was interrupted".into()))?
 }
 
 #[tauri::command]
