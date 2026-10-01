@@ -1,5 +1,6 @@
 import { Clipboard, Copy, History, Loader2, Play, RefreshCw, Trash2, Volume2, Users } from "lucide-react";
 import { MeetingsPage } from "./MeetingsPage";
+import { QwenSpeech } from "./QwenSpeech";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteHistoryItem,
@@ -25,9 +26,13 @@ export function LibraryPage() {
   const [message, setMessage] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [speaking, setSpeaking] = useState(false);
+  const [speechEngine, setSpeechEngine] = useState(() => localStorage.getItem("speech_engine") || "qwen");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => { localStorage.setItem("library_tab", activeTab); }, [activeTab]);
+  useEffect(() => { localStorage.setItem("speech_engine", speechEngine); }, [speechEngine]);
+  useEffect(() => () => { audioRef.current?.pause(); }, []);
+  useEffect(() => { audioRef.current?.pause(); setSpeaking(false); }, [activeTab, speechEngine]);
 
   useEffect(() => {
     void loadHistory();
@@ -131,6 +136,7 @@ export function LibraryPage() {
         <main className="settings-tab-content">
           <div hidden={activeTab !== "meetings"}><MeetingsPage /></div>
           {activeTab !== "meetings" && <>
+          {activeTab === "speech" && <div className="qwen-engine-switch"><button className={speechEngine === "qwen" ? "primary-button" : "secondary-button"} onClick={() => setSpeechEngine("qwen")}>Qwen · студия голоса</button><button className={speechEngine === "classic" ? "primary-button" : "secondary-button"} onClick={() => setSpeechEngine("classic")}>Piper / Silero</button></div>}
           {message ? <div className={isErrorMessage(message) ? "error-banner mb-4" : "success-banner mb-4"}>{message}</div> : null}
 
           {activeTab === "history" ? (
@@ -189,7 +195,7 @@ export function LibraryPage() {
                 </div>
               )}
             </section>
-          ) : (
+          ) : speechEngine === "qwen" ? <QwenSpeech text={text} setText={setText} /> : (
             <section className="settings-section">
               <div className="settings-section-heading">
                 <Volume2 className="h-4 w-4" />

@@ -6,6 +6,7 @@ mod stt;
 mod system;
 mod meetings;
 mod instance;
+mod qwen;
 
 use commands::AppState;
 use tauri::menu::{Menu, MenuItem};
@@ -56,6 +57,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage(meetings::MeetingsState::default())
+        .manage(qwen::QwenState::default())
         .setup(|app| {
             let app_handle = app.handle().clone();
             *commands::GLOBAL_APP_HANDLE.lock().unwrap() = Some(app_handle);
@@ -138,6 +140,13 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            qwen::qwen_status,
+            qwen::setup_qwen,
+            qwen::cancel_qwen,
+            qwen::synthesize_qwen,
+            qwen::import_qwen_voice,
+            qwen::delete_qwen_voice,
+            qwen::export_qwen_audio,
             meetings::meeting_tools_status,
             meetings::setup_meeting_tools,
             meetings::cancel_meeting_job,

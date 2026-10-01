@@ -159,7 +159,7 @@ fn python() -> Result<PathBuf, AppError> {
         AppError::Settings("Для конференций нужен Python 3.10+ (рекомендуется 3.11).".into())
     })
 }
-fn ffmpeg() -> Option<PathBuf> {
+pub(crate) fn ffmpeg() -> Option<PathBuf> {
     let mut options: Vec<PathBuf> = std::env::var("FERROFLUID_FFMPEG_BIN")
         .ok()
         .map(PathBuf::from)
