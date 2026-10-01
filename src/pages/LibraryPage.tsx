@@ -1,4 +1,5 @@
-import { Clipboard, Copy, History, Loader2, Play, RefreshCw, Trash2, Volume2 } from "lucide-react";
+import { Clipboard, Copy, History, Loader2, Play, RefreshCw, Trash2, Volume2, Users } from "lucide-react";
+import { MeetingsPage } from "./MeetingsPage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteHistoryItem,
@@ -13,10 +14,10 @@ import {
 import type { HistoryItem, TtsStatus, TtsVoiceInfo } from "../lib/types";
 import { formatDate, formatDuration, languageLabel } from "../lib/format";
 
-type LibraryTab = "history" | "speech";
+type LibraryTab = "history" | "speech" | "meetings";
 
 export function LibraryPage() {
-  const [activeTab, setActiveTab] = useState<LibraryTab>("history");
+  const [activeTab, setActiveTab] = useState<LibraryTab>(() => (localStorage.getItem("library_tab") as LibraryTab) || "history");
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
   const [ttsStatus, setTtsStatus] = useState<TtsStatus | null>(null);
   const [voices, setVoices] = useState<TtsVoiceInfo[]>([]);
@@ -25,6 +26,8 @@ export function LibraryPage() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [speaking, setSpeaking] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => { localStorage.setItem("library_tab", activeTab); }, [activeTab]);
 
   useEffect(() => {
     void loadHistory();
@@ -106,6 +109,9 @@ export function LibraryPage() {
     <div className="settings-panel-content flex flex-1 min-h-0 flex-col pt-2">
       <div className="settings-tabs-container library-tabs-container">
         <aside className="settings-sidebar">
+          <button className={`sidebar-tab-btn ${activeTab === "meetings" ? "active" : ""}`} onClick={() => setActiveTab("meetings")}>
+            <Users className="h-4 w-4" /><span>Конференции</span>
+          </button>
           <button
             className={`sidebar-tab-btn ${activeTab === "history" ? "active" : ""}`}
             onClick={() => setActiveTab("history")}
@@ -123,6 +129,8 @@ export function LibraryPage() {
         </aside>
 
         <main className="settings-tab-content">
+          <div hidden={activeTab !== "meetings"}><MeetingsPage /></div>
+          {activeTab !== "meetings" && <>
           {message ? <div className={isErrorMessage(message) ? "error-banner mb-4" : "success-banner mb-4"}>{message}</div> : null}
 
           {activeTab === "history" ? (
@@ -232,6 +240,7 @@ export function LibraryPage() {
               </div>
             </section>
           )}
+          </>}
         </main>
       </div>
     </div>

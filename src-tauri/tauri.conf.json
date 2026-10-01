@@ -33,7 +33,8 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$DATA/Ferrofluid Voice/tts/output/**"
+          "$DATA/Ferrofluid Voice/tts/output/**",
+          "$DATA/Ferrofluid Voice/meetings/meeting-*/audio.wav"
         ]
       }
     }

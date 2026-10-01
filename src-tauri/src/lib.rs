@@ -4,6 +4,7 @@ mod errors;
 mod storage;
 mod stt;
 mod system;
+mod meetings;
 
 use commands::AppState;
 use tauri::menu::{Menu, MenuItem};
@@ -28,10 +29,16 @@ fn show_main_window(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|arg| arg == "--library") {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move { let _ = commands::open_library_window(app).await; });
+                return;
+            }
             show_main_window(app);
         }))
         .plugin(tauri_plugin_dialog::init())
+        .manage(meetings::MeetingsState::default())
         .setup(|app| {
             let app_handle = app.handle().clone();
             *commands::GLOBAL_APP_HANDLE.lock().unwrap() = Some(app_handle);
@@ -42,6 +49,10 @@ pub fn run() {
             let state = AppState::new(app.handle())?;
             let always_on = state.settings.lock().unwrap().always_on;
             app.manage(state);
+            if std::env::args().any(|arg| arg == "--library") {
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn(async move { let _ = commands::open_library_window(app).await; });
+            }
 
             // 1. Create native system tray menu items
             let settings_i =
@@ -105,6 +116,17 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            meetings::meeting_tools_status,
+            meetings::setup_meeting_tools,
+            meetings::cancel_meeting_job,
+            meetings::import_meeting,
+            meetings::analyze_meeting,
+            meetings::transcribe_meeting,
+            meetings::calibrate_meeting,
+            meetings::refine_meeting,
+            meetings::list_meetings,
+            meetings::save_meeting,
+            meetings::export_meeting_file,
             commands::start_recording,
             commands::stop_recording,
             commands::get_recording_state,

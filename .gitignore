@@ -32,6 +32,8 @@ Thumbs.db
 *.swo
 
 # Temporary/Cache files
+__pycache__/
+*.pyc
 .npm/
 .eslintcache
 .parcel-cache/

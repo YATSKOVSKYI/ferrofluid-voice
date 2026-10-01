@@ -129,7 +129,7 @@ export default function App() {
                 ) : null}
               </div>
               <div className="settings-window-subtitle">
-                {isLibraryWindow ? "История распознавания и озвучивание текста" : hasModel ? t.settingsSubtitle : t.hintSelectModel}
+                {isLibraryWindow ? "Конференции, история и озвучивание текста" : hasModel ? t.settingsSubtitle : t.hintSelectModel}
               </div>
             </div>
             <div className="flex gap-2">

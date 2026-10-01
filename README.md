@@ -15,6 +15,8 @@ No cloud APIs, no subscriptions, no data collection. Just high-speed, local spee
 
 ## ✨ Features
 
+- **Conference Studio**: Import Zoom M4A recordings, detect speaker groups locally, listen to voice samples, assign names, edit speaker-labelled transcripts, and export TXT/SRT/JSON. Available inside Library → Конференции. See [the meeting guide](docs/meetings.md) for setup and usage.
+
 - **⚡ Instant Paste Dictation**: Hold your hotkey, speak, release—and watch your words automatically type themselves into your current text editor, chat, or browser field.
 - **🎧 Zero-Dependency Portability (Windows)**: Bundled with Microsoft Visual C++ Runtime libraries (`vcruntime140.dll`, `msvcp140.dll`, and `vcruntime140_1.dll`) out-of-the-box. Works on fresh Windows 10/11 installations without forcing the user to install any runtimes.
 - **🍎 Full macOS Native Integration**: Uses CoreGraphics Event Taps (`CGEventTap`) and AppleScript focus restoration for native global hotkey triggering and text injection on macOS.
