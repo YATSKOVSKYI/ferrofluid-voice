@@ -66,6 +66,9 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
   const hotkeyStopPendingRef = useRef(false);
   const hotkeyStopAlreadyStoppedRef = useRef(false);
   const hotkeySessionActiveRef = useRef(false);
+  const manualActionRef = useRef(false);
+  const recordingGenerationRef = useRef(0);
+  const [manualActionPending, setManualActionPending] = useState(false);
   const dragCleanupRef = useRef<(() => void) | null>(null);
 
   const hasModelRef = useRef(hasModel);
@@ -127,6 +130,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
           hotkeyStopAlreadyStoppedRef.current = false;
           hotkeySessionActiveRef.current = false;
           hotkeyStartInFlightRef.current = true;
+          recordingGenerationRef.current += 1;
 
           try {
             const win = getCurrentWindow();
@@ -400,6 +404,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
   }, [status]);
 
   async function finishHotkeyRecording(alreadyStopped = false) {
+    const generation = recordingGenerationRef.current;
     void logMessage(`[finishHotkeyRecording] Called. alreadyStopped=${alreadyStopped}, statusRef.current=${statusRef.current}`);
     if (statusRef.current !== "recording") {
       void logMessage(`[finishHotkeyRecording] Exiting because statusRef.current is not recording.`);
@@ -451,6 +456,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
       if (!alwaysOnRef.current) {
         // Let the user see the "Copied" status for a brief moment before hiding
         await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (recordingGenerationRef.current !== generation || statusRef.current !== "done") return;
         const win = getCurrentWindow();
         await win.hide();
       }
@@ -464,22 +470,19 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
   }
 
   async function toggleRecording() {
+    if (manualActionRef.current || hotkeyStartInFlightRef.current || statusRef.current === "processing") return;
+    manualActionRef.current = true;
+    setManualActionPending(true);
+    recordingGenerationRef.current += 1;
     setMessage("");
-    if (!hasModel) {
-      setMessage(t.msgChooseModel);
-      onOpenSettings();
-      return;
-    }
-    if (!hasEngine) {
-      setMessage(t.msgEngineMissing);
-      return;
-    }
 
     // Deactivate hotkey session immediately so that any hotkey release events don't trigger stop actions concurrently
     hotkeySessionActiveRef.current = false;
 
     try {
-      if (status === "recording" || statusRef.current === "recording") {
+      // The recorder is authoritative: a failed/doubled UI command must not
+      // leave an active microphone impossible to stop from the button.
+      if (await getRecordingState()) {
         statusRef.current = "processing";
         setStatus("processing");
         await stopRecording();
@@ -499,6 +502,15 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
           setMessage(t.msgTranscriptReady);
         }
       } else {
+        if (!hasModel) {
+          setMessage(t.msgChooseModel);
+          onOpenSettings();
+          return;
+        }
+        if (!hasEngine) {
+          setMessage(t.msgEngineMissing);
+          return;
+        }
         setResult(null);
         await startRecording();
         statusRef.current = "recording";
@@ -508,6 +520,9 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
       statusRef.current = "error";
       setStatus("error");
       setMessage(errorMessage(error));
+    } finally {
+      manualActionRef.current = false;
+      setManualActionPending(false);
     }
   }
 
@@ -648,7 +663,7 @@ export function Widget({ language, modelStatus, onOpenSettings }: WidgetProps) {
           <button
             className={`widget-record ${status === "recording" ? "widget-record-active" : ""} ${status === "processing" ? "widget-record-processing" : ""}`}
             onClick={toggleRecording}
-            disabled={status === "processing"}
+            disabled={status === "processing" || manualActionPending}
             aria-label={status === "recording" ? "Stop recording" : "Start recording"}
             title={status === "recording" ? "Stop recording" : "Start recording"}
             style={status === "recording" ? ({ "--volume": volume } as React.CSSProperties) : undefined}
