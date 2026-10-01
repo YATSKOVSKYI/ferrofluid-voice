@@ -23,19 +23,15 @@ use crate::{
 };
 use chrono::Utc;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::Arc;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 pub type HWND = *mut std::ffi::c_void;
-pub type HHOOK = *mut std::ffi::c_void;
-
-pub static mut H_HOOK_KEYBOARD: HHOOK = std::ptr::null_mut();
-pub static mut H_HOOK_MOUSE: HHOOK = std::ptr::null_mut();
-pub static mut PREV_FOREGROUND_WINDOW: HWND = std::ptr::null_mut();
-pub static mut HOOK_THREAD_ID: u32 = 0;
+pub static PREV_FOREGROUND_WINDOW: AtomicIsize = AtomicIsize::new(0);
 pub static IS_RECORDING: AtomicBool = AtomicBool::new(false);
+pub static IS_TRANSCRIBING: AtomicBool = AtomicBool::new(false);
 pub static IS_RECORDING_HOTKEY: AtomicBool = AtomicBool::new(false);
 pub static GLOBAL_APP_HANDLE: Mutex<Option<AppHandle>> = Mutex::new(None);
 
@@ -78,6 +74,9 @@ pub fn start_recording(state: tauri::State<AppState>) -> Result<(), AppError> {
 }
 
 pub fn start_recording_internal(state: &AppState) -> Result<(), AppError> {
+    if IS_TRANSCRIBING.load(Ordering::SeqCst) {
+        return Err(AppError::Audio("Wait for the current transcription to finish".into()));
+    }
     let mut recorder_guard = state
         .recorder
         .lock()
@@ -100,10 +99,11 @@ pub fn stop_recording(state: tauri::State<AppState>) -> Result<AudioCaptureInfo,
 }
 
 pub fn stop_recording_internal(state: &AppState) -> Result<AudioCaptureInfo, AppError> {
-    let recorder = state
+    let mut recorder_guard = state
         .recorder
         .lock()
-        .map_err(|_| AppError::Audio("Recorder lock was poisoned.".into()))?
+        .map_err(|_| AppError::Audio("Recorder lock was poisoned.".into()))?;
+    let recorder = recorder_guard
         .take()
         .ok_or(AppError::RecordingNotRunning)?;
 
@@ -131,6 +131,14 @@ pub async fn transcribe_audio(
     state: tauri::State<'_, AppState>,
     language: String,
 ) -> Result<TranscriptResult, AppError> {
+    if IS_TRANSCRIBING.swap(true, Ordering::SeqCst) {
+        return Err(AppError::Transcription("Transcription is already running".into()));
+    }
+    struct ProcessingGuard;
+    impl Drop for ProcessingGuard {
+        fn drop(&mut self) { IS_TRANSCRIBING.store(false, Ordering::SeqCst); }
+    }
+    let processing = ProcessingGuard;
     let audio = state
         .last_audio
         .lock()
@@ -144,6 +152,7 @@ pub async fn transcribe_audio(
         .clone();
 
     tauri::async_runtime::spawn_blocking(move || {
+        let _processing = processing;
         transcribe(settings, audio.path, language, audio.duration_seconds)
     })
     .await
@@ -695,14 +704,14 @@ pub fn get_hotkey_settings(state: tauri::State<AppState>) -> Result<HotkeySettin
 
 #[tauri::command]
 pub fn start_recording_hotkey() -> Result<(), AppError> {
-    IS_RECORDING_HOTKEY.store(true, std::sync::atomic::Ordering::SeqCst);
+    hotkey::capture(true);
     println!("START RECORDING HOTKEY CALLED: IS_RECORDING_HOTKEY=true");
     Ok(())
 }
 
 #[tauri::command]
 pub fn cancel_recording_hotkey() -> Result<(), AppError> {
-    IS_RECORDING_HOTKEY.store(false, std::sync::atomic::Ordering::SeqCst);
+    hotkey::capture(false);
     println!("CANCEL RECORDING HOTKEY CALLED: IS_RECORDING_HOTKEY=false");
     Ok(())
 }
@@ -715,6 +724,10 @@ pub fn update_hotkey_settings(
     hotkey_type: String,
     auto_submit: bool,
 ) -> Result<(), AppError> {
+    let hotkey_type = safe_hotkey_type(hotkey_type);
+    if !hotkey::valid_hotkey(&hotkey_type) {
+        return Err(AppError::Settings("Choose one key or a combination of up to four keys".into()));
+    }
     let mut settings = state
         .settings
         .lock()
@@ -723,6 +736,8 @@ pub fn update_hotkey_settings(
     settings.hotkey_type = safe_hotkey_type(hotkey_type);
     settings.auto_submit = auto_submit;
     save_settings(&settings)?;
+
+    hotkey::configure(&settings.hotkey_type);
 
     // Emit event for real-time synchronization across windows
     let _ = app.emit("hotkey-settings-changed", HotkeySettings {
@@ -750,9 +765,10 @@ pub fn update_hotkey_settings(
 pub async fn inject_text(text: String, auto_submit: bool) -> Result<(), AppError> {
     // 1. Focus the previously active foreground window
     unsafe {
-        if !PREV_FOREGROUND_WINDOW.is_null() {
+        let previous_window = PREV_FOREGROUND_WINDOW.load(Ordering::SeqCst) as HWND;
+        if !previous_window.is_null() {
             #[cfg(target_os = "windows")]
-            SetForegroundWindow(PREV_FOREGROUND_WINDOW);
+            SetForegroundWindow(previous_window);
         }
     }
 

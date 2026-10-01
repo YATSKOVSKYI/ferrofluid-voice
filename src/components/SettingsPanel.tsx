@@ -174,6 +174,16 @@ export function SettingsPanel({
   useEffect(() => {
     if (recordStatus !== "recording") return;
 
+    // Native capture owns the complete press/release sequence, including Ctrl.
+    if (window.__TAURI_INTERNALS__) {
+      let unlisten: (() => void) | undefined;
+      let active = true;
+      void listen("hotkey-capture-cancelled", () => {
+        if (active) { setRecordStatus("cancelled"); setTimeout(() => setRecordStatus("idle"), 1500); }
+      }).then(handler => { if (active) unlisten = handler; else handler(); });
+      return () => { active = false; unlisten?.(); void cancelRecordingHotkey(); };
+    }
+
     const handleKeyDown = async (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();

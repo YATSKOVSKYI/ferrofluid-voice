@@ -60,12 +60,11 @@ pub fn run() {
             let app_handle = app.handle().clone();
             *commands::GLOBAL_APP_HANDLE.lock().unwrap() = Some(app_handle);
 
-            // Spawn global mouse and keyboard hook listener
-            commands::start_hook_thread();
-
             let state = AppState::new(app.handle())?;
             let always_on = state.settings.lock().unwrap().always_on;
             app.manage(state);
+            // Hooks need the loaded binding and managed application state.
+            commands::start_hook_thread();
             if std::env::args().any(|arg| arg == "--library") {
                 let app = app.handle().clone();
                 tauri::async_runtime::spawn(async move { let _ = commands::open_library_window(app).await; });

@@ -7,6 +7,18 @@ use crate::commands::{
 use crate::errors::AppError;
 use crate::stt::model_manager::AppSettings;
 
+pub fn configure(value: &str) {
+    #[cfg(target_os = "windows")]
+    win::configure(value);
+}
+pub fn capture(enabled: bool) {
+    #[cfg(target_os = "windows")]
+    win::capture(enabled);
+    #[cfg(not(target_os = "windows"))]
+    crate::commands::IS_RECORDING_HOTKEY.store(enabled, Ordering::SeqCst);
+}
+pub fn valid_hotkey(value: &str) -> bool { super::hold_hotkey::valid(value) }
+
 #[cfg(target_os = "windows")]
 use crate::commands::PREV_FOREGROUND_WINDOW;
 
@@ -48,14 +60,14 @@ fn get_cached_settings() -> Option<AppSettings> {
     Some(settings.clone())
 }
 
-fn trigger_start_recording() {
+fn trigger_start_recording(foreground: Option<isize>) {
     println!("[RUST HOOK] trigger_start_recording entry");
     if !IS_RECORDING.swap(true, Ordering::SeqCst) {
         println!("[RUST HOOK] trigger_start_recording: swapped successfully, calling start_recording_internal");
         
         #[cfg(target_os = "windows")]
         unsafe {
-            PREV_FOREGROUND_WINDOW = GetForegroundWindow();
+            PREV_FOREGROUND_WINDOW.store(foreground.unwrap_or_else(|| GetForegroundWindow() as isize), Ordering::SeqCst);
         }
 
         let should_reveal_widget = get_cached_settings()
@@ -144,417 +156,8 @@ fn trigger_stop_recording() {
 }
 
 #[cfg(target_os = "windows")]
-mod win {
-    use std::sync::atomic::Ordering;
-    use std::ptr;
-    use tauri::Emitter;
-    use crate::commands::{
-        GLOBAL_APP_HANDLE, H_HOOK_KEYBOARD, H_HOOK_MOUSE, HOOK_THREAD_ID,
-        IS_RECORDING_HOTKEY,
-    };
-    use super::{get_cached_settings, trigger_start_recording, trigger_stop_recording};
-
-    type HWND = *mut std::ffi::c_void;
-    type HHOOK = *mut std::ffi::c_void;
-    type HINSTANCE = *mut std::ffi::c_void;
-    type WPARAM = usize;
-    type LPARAM = isize;
-    type LRESULT = isize;
-    type HOOKPROC = Option<unsafe extern "system" fn(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT>;
-
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct POINT {
-        x: i32,
-        y: i32,
-    }
-
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct MSG {
-        hwnd: HWND,
-        message: u32,
-        w_param: WPARAM,
-        l_param: LPARAM,
-        time: u32,
-        pt: POINT,
-    }
-
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct KBDLLHOOKSTRUCT {
-        vk_code: u32,
-        scan_code: u32,
-        flags: u32,
-        time: u32,
-        dw_extra_info: usize,
-    }
-
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct MSLLHOOKSTRUCT {
-        pt: POINT,
-        mouse_data: u32,
-        flags: u32,
-        time: u32,
-        dw_extra_info: usize,
-    }
-
-    const WH_KEYBOARD_LL: i32 = 13;
-    const WH_MOUSE_LL: i32 = 14;
-
-    const WM_KEYDOWN: usize = 0x0100;
-    const WM_KEYUP: usize = 0x0101;
-    const WM_SYSKEYDOWN: usize = 0x0104;
-    const WM_SYSKEYUP: usize = 0x0105;
-
-    const WM_MOUSEMOVE: usize = 0x0200;
-    const WM_LBUTTONDOWN: usize = 0x0201;
-    const WM_RBUTTONDOWN: usize = 0x0204;
-    const WM_MBUTTONDOWN: usize = 0x0207;
-    const WM_MBUTTONUP: usize = 0x0208;
-    const WM_XBUTTONDOWN: usize = 0x020B;
-    const WM_XBUTTONUP: usize = 0x020C;
-
-    const WM_QUIT: u32 = 0x0012;
-
-    #[link(name = "user32")]
-    extern "system" {
-        fn SetWindowsHookExW(idHook: i32, lpfn: HOOKPROC, hmod: HINSTANCE, dwThreadId: u32) -> HHOOK;
-        fn UnhookWindowsHookEx(hhk: HHOOK) -> i32;
-        fn CallNextHookEx(hhk: HHOOK, nCode: i32, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-        fn GetMessageW(lpMsg: *mut MSG, hwnd: HWND, wMsgFilterMin: u32, wMsgFilterMax: u32) -> i32;
-        fn TranslateMessage(lpMsg: *const MSG) -> i32;
-        fn DispatchMessageW(lpMsg: *const MSG) -> LRESULT;
-        fn PostThreadMessageW(idThread: u32, msg: u32, wParam: WPARAM, lParam: LPARAM) -> i32;
-        fn GetCurrentThreadId() -> u32;
-    }
-
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GetModuleHandleW(lpModuleName: *const u16) -> HINSTANCE;
-    }
-
-    pub fn get_key_display_name(vk_code: u32) -> String {
-        match vk_code {
-            0x08 => "Backspace".into(),
-            0x09 => "Tab".into(),
-            0x0D => "Enter".into(),
-            0x10 | 0xA0 | 0xA1 => "Shift".into(),
-            0x11 | 0xA2 | 0xA3 => "Control".into(),
-            0x12 | 0xA4 | 0xA5 => "Alt".into(),
-            0x13 => "Pause".into(),
-            0x14 => "Caps Lock".into(),
-            0x1B => "Escape".into(),
-            0x20 => "Space".into(),
-            0x21 => "Page Up".into(),
-            0x22 => "Page Down".into(),
-            0x23 => "End".into(),
-            0x24 => "Home".into(),
-            0x25 => "Left Arrow".into(),
-            0x26 => "Up Arrow".into(),
-            0x27 => "Right Arrow".into(),
-            0x28 => "Down Arrow".into(),
-            0x2C => "Print Screen".into(),
-            0x2D => "Insert".into(),
-            0x2E => "Delete".into(),
-            0x30..=0x39 => format!("{}", (vk_code - 0x30) as u8 as char),
-            0x41..=0x5A => format!("{}", (vk_code - 0x41 + 65) as u8 as char),
-            0x5F => "Sleep".into(),
-            0x60..=0x69 => format!("Num {}", vk_code - 0x60),
-            0x6A => "Num *".into(),
-            0x6B => "Num +".into(),
-            0x6C => "Num Separator".into(),
-            0x6D => "Num -".into(),
-            0x6E => "Num .".into(),
-            0x6F => "Num /".into(),
-            0x70..=0x87 => format!("F{}", vk_code - 0x70 + 1),
-            0x90 => "Num Lock".into(),
-            0x91 => "Scroll Lock".into(),
-            0xA6 => "Browser Back".into(),
-            0xA7 => "Browser Forward".into(),
-            0xA8 => "Browser Refresh".into(),
-            0xA9 => "Browser Stop".into(),
-            0xAA => "Browser Search".into(),
-            0xAB => "Browser Favorites".into(),
-            0xAC => "Browser Home".into(),
-            0xAD => "Volume Mute".into(),
-            0xAE => "Volume Down".into(),
-            0xAF => "Volume Up".into(),
-            0xB0 => "Next Track".into(),
-            0xB1 => "Previous Track".into(),
-            0xB2 => "Stop Media".into(),
-            0xB3 => "Play/Pause Media".into(),
-            0xBA => ";".into(),
-            0xBB => "=".into(),
-            0xBC => ",".into(),
-            0xBD => "-".into(),
-            0xBE => ".".into(),
-            0xBF => "/".into(),
-            0xC0 => "`".into(),
-            0xDB => "[".into(),
-            0xDC => "\\".into(),
-            0xDD => "]".into(),
-            0xDE => "'".into(),
-            _ => format!("Key {:#X}", vk_code),
-        }
-    }
-
-    pub fn parse_hotkey_display(hotkey_str: &str) -> String {
-        if hotkey_str == "unassigned" {
-            return "Unassigned".into();
-        }
-        if hotkey_str == "mouse_middle" || hotkey_str == "" {
-            return "Middle Click".into();
-        }
-        if hotkey_str == "mouse_left" {
-            return "Left Click".into();
-        }
-        if hotkey_str == "mouse_right" {
-            return "Right Click".into();
-        }
-        if hotkey_str == "mouse_x1" {
-            return "Side Button 4 (X1)".into();
-        }
-        if hotkey_str == "mouse_x2" {
-            return "Side Button 5 (X2)".into();
-        }
-        if let Some(vk_str) = hotkey_str.strip_prefix("key_") {
-            if let Ok(vk_code) = vk_str.parse::<u32>() {
-                return get_key_display_name(vk_code);
-            }
-        }
-        // Fallback for legacy structures
-        match hotkey_str {
-            "keyboard_f10" => "F10".into(),
-            "keyboard_caps" => "Caps Lock".into(),
-            "keyboard_scroll" => "Scroll Lock".into(),
-            "keyboard_insert" => "Insert".into(),
-            _ => hotkey_str.to_string(),
-        }
-    }
-
-    fn is_keyboard_hotkey_match(vk_code: u32, hotkey_str: &str) -> bool {
-        if hotkey_str == "unassigned" {
-            return false;
-        }
-        if let Some(vk_str) = hotkey_str.strip_prefix("key_") {
-            if let Ok(target_vk) = vk_str.parse::<u32>() {
-                // Shift generic (16), Left Shift (160), Right Shift (161)
-                if (target_vk == 16 || target_vk == 160 || target_vk == 161) &&
-                   (vk_code == 16 || vk_code == 160 || vk_code == 161) {
-                    return true;
-                }
-                // Control generic (17), Left Control (162), Right Control (163)
-                if (target_vk == 17 || target_vk == 162 || target_vk == 163) &&
-                   (vk_code == 17 || vk_code == 162 || vk_code == 163) {
-                    return true;
-                }
-                // Alt generic (18), Left Alt (164), Right Alt (165)
-                if (target_vk == 18 || target_vk == 164 || target_vk == 165) &&
-                   (vk_code == 18 || vk_code == 164 || vk_code == 165) {
-                    return true;
-                }
-                return vk_code == target_vk;
-            }
-        }
-        match hotkey_str {
-            "keyboard_f10" => vk_code == 0x79,
-            "keyboard_caps" => vk_code == 0x14,
-            "keyboard_scroll" => vk_code == 0x91,
-            "keyboard_insert" => vk_code == 0x2D,
-            _ => false,
-        }
-    }
-
-    fn is_mouse_hotkey_match(wparam: usize, hook_struct: &MSLLHOOKSTRUCT, hotkey_str: &str) -> bool {
-        if hotkey_str == "unassigned" {
-            return false;
-        }
-        if hotkey_str == "mouse_middle" || hotkey_str == "" {
-            return wparam == WM_MBUTTONDOWN || wparam == WM_MBUTTONUP;
-        }
-
-        match hotkey_str {
-            "mouse_left" | "mouse_right" => false,
-            "mouse_x1" => {
-                if wparam == WM_XBUTTONDOWN || wparam == WM_XBUTTONUP {
-                    let xbutton = (hook_struct.mouse_data >> 16) as u16;
-                    return xbutton == 1;
-                }
-                false
-            }
-            "mouse_x2" => {
-                if wparam == WM_XBUTTONDOWN || wparam == WM_XBUTTONUP {
-                    let xbutton = (hook_struct.mouse_data >> 16) as u16;
-                    return xbutton == 2;
-                }
-                false
-            }
-            _ => false,
-        }
-    }
-
-    fn is_mouse_down_event(wparam: usize) -> bool {
-        wparam == WM_LBUTTONDOWN
-            || wparam == WM_RBUTTONDOWN
-            || wparam == WM_MBUTTONDOWN
-            || wparam == WM_XBUTTONDOWN
-    }
-
-    unsafe extern "system" fn low_level_keyboard_proc(
-        code: i32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        if code >= 0 {
-            let hook_struct = *(lparam as *const KBDLLHOOKSTRUCT);
-            let vk_code = hook_struct.vk_code;
-            println!("[RUST HOOK] low_level_keyboard_proc triggered. vk_code={}, wparam={}", vk_code, wparam);
-
-            // 1. Interactive Hotkey Recording Mode
-            if IS_RECORDING_HOTKEY.load(Ordering::SeqCst) {
-                if wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN {
-                    IS_RECORDING_HOTKEY.store(false, Ordering::SeqCst);
-                    let hotkey_type = format!("key_{vk_code}");
-                    let display_name = get_key_display_name(vk_code);
-                    if let Some(app) = GLOBAL_APP_HANDLE.lock().unwrap().as_ref() {
-                        let _ = app.emit("hotkey-recorded", serde_json::json!({
-                            "hotkeyType": hotkey_type,
-                            "displayName": display_name,
-                        }));
-                    }
-                }
-                return 1; // Consume input in recording mode
-            }
-
-            // 2. Standard Recording Trigger
-            if let Some(settings) = get_cached_settings() {
-                if is_keyboard_hotkey_match(vk_code, &settings.hotkey_type) {
-                    if wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN {
-                        trigger_start_recording();
-                    } else if wparam == WM_KEYUP || wparam == WM_SYSKEYUP {
-                        trigger_stop_recording();
-                    }
-                    return 1;
-                }
-            }
-        }
-        CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
-    }
-
-    unsafe extern "system" fn low_level_mouse_proc(
-        code: i32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        if code >= 0 {
-            // Bypass high-frequency mouse movements instantly for zero CPU overhead
-            if wparam == WM_MOUSEMOVE {
-                return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
-            }
-
-            println!("[RUST HOOK] low_level_mouse_proc triggered. wparam={}", wparam);
-
-            let hook_struct = *(lparam as *const MSLLHOOKSTRUCT);
-            // 1. Interactive Hotkey Recording Mode
-            if IS_RECORDING_HOTKEY.load(Ordering::SeqCst) {
-                if wparam == WM_LBUTTONDOWN
-                    || wparam == WM_RBUTTONDOWN
-                    || wparam == WM_MBUTTONDOWN
-                    || wparam == WM_XBUTTONDOWN
-                {
-                    IS_RECORDING_HOTKEY.store(false, Ordering::SeqCst);
-
-                    if wparam == WM_LBUTTONDOWN || wparam == WM_RBUTTONDOWN {
-                        if let Some(app) = GLOBAL_APP_HANDLE.lock().unwrap().as_ref() {
-                            let _ = app.emit("hotkey-recording-error", serde_json::json!({
-                                "message": "Left and right mouse clicks cannot be used as global hotkeys.",
-                            }));
-                        }
-                        return CallNextHookEx(ptr::null_mut(), code, wparam, lparam);
-                    }
-
-                    let (hotkey_type, display_name) = if wparam == WM_MBUTTONDOWN {
-                        ("mouse_middle".to_string(), "Middle Click".to_string())
-                    } else {
-                        let xbutton = (hook_struct.mouse_data >> 16) as u16;
-                        if xbutton == 1 {
-                            ("mouse_x1".to_string(), "Side Button 4 (X1)".to_string())
-                        } else {
-                            ("mouse_x2".to_string(), "Side Button 5 (X2)".to_string())
-                        }
-                    };
-
-                    if let Some(app) = GLOBAL_APP_HANDLE.lock().unwrap().as_ref() {
-                        let _ = app.emit("hotkey-recorded", serde_json::json!({
-                            "hotkeyType": hotkey_type,
-                            "displayName": display_name,
-                        }));
-                    }
-                }
-                return 1; // Consume input in recording mode
-            }
-
-            // 2. Standard Recording Trigger
-            if let Some(settings) = get_cached_settings() {
-                println!("[RUST HOOK] settings.hotkey_type = '{}'", settings.hotkey_type);
-                if is_mouse_hotkey_match(wparam, &hook_struct, &settings.hotkey_type) {
-                    if is_mouse_down_event(wparam) {
-                        trigger_start_recording();
-                    } else {
-                        trigger_stop_recording();
-                    }
-                    return 1; // Consume clicks to avoid losing target window focus
-                }
-            }
-        }
-        CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
-    }
-
-    pub fn start_hook_thread() {
-        std::thread::spawn(|| unsafe {
-            HOOK_THREAD_ID = GetCurrentThreadId();
-
-            let hinst = GetModuleHandleW(ptr::null());
-            H_HOOK_KEYBOARD = SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                Some(low_level_keyboard_proc),
-                hinst,
-                0,
-            );
-            H_HOOK_MOUSE = SetWindowsHookExW(
-                WH_MOUSE_LL,
-                Some(low_level_mouse_proc),
-                hinst,
-                0,
-            );
-            let mut msg: MSG = std::mem::zeroed();
-            while GetMessageW(&mut msg, ptr::null_mut(), 0, 0) > 0 {
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
-
-            if !H_HOOK_KEYBOARD.is_null() {
-                UnhookWindowsHookEx(H_HOOK_KEYBOARD);
-                H_HOOK_KEYBOARD = ptr::null_mut();
-            }
-            if !H_HOOK_MOUSE.is_null() {
-                UnhookWindowsHookEx(H_HOOK_MOUSE);
-                H_HOOK_MOUSE = ptr::null_mut();
-            }
-        });
-    }
-
-    pub fn stop_hook_thread() {
-        unsafe {
-            if HOOK_THREAD_ID != 0 {
-                PostThreadMessageW(HOOK_THREAD_ID, WM_QUIT, 0, 0);
-                HOOK_THREAD_ID = 0;
-            }
-        }
-    }
-}
+#[path = "hotkey_win.rs"]
+mod win;
 
 #[cfg(target_os = "macos")]
 mod mac {
@@ -846,7 +449,7 @@ mod mac {
             } else if let Some(settings) = get_cached_settings() {
                 if is_keyboard_hotkey_match(js_code, &settings.hotkey_type) {
                     if is_down {
-                        trigger_start_recording();
+                        trigger_start_recording(None);
                     } else {
                         trigger_stop_recording();
                     }
@@ -883,7 +486,7 @@ mod mac {
             } else if let Some(settings) = get_cached_settings() {
                 if is_keyboard_hotkey_match(js_code, &settings.hotkey_type) {
                     if is_down {
-                        trigger_start_recording();
+                        trigger_start_recording(None);
                     } else {
                         trigger_stop_recording();
                     }
@@ -923,7 +526,7 @@ mod mac {
             } else if let Some(settings) = get_cached_settings() {
                 if is_mouse_hotkey_match(button_number, &settings.hotkey_type) {
                     if is_down {
-                        trigger_start_recording();
+                        trigger_start_recording(None);
                     } else {
                         trigger_stop_recording();
                     }
